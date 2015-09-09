@@ -4,6 +4,5 @@ packages:
 extra-deps:
 - binary-orphans-0.1.1.0
 - binary-tagged-0.1.1.0
-- path-0.5.2
 - flowdock-rest-0.1.0.0
-resolver: lts-2.22
+resolver: lts-3.4

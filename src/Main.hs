@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -23,7 +24,9 @@ import Data.Tagged
 import Data.Text as T
 import Data.Text.IO as T
 import Data.Time
+#if !MIN_VERSION_time(1,5,0)
 import System.Locale
+#endif
 import Data.Typeable
 import GHC.Generics
 import Network.HTTP.Client
