@@ -15,9 +15,6 @@ ghc-options: -Wall
 dependencies:
   - base >= 4.7 && <4.9
   - aeson
-  - aeson-pretty
-  - ansi-wl-pprint
-  - base64-bytestring
   - bifunctors
   - binary
   - binary-orphans >=0.1.1
@@ -36,7 +33,6 @@ dependencies:
   - tagged
   - text
   - time
-  - transformers
   - unordered-containers
   - flowdock-rest >=0.1.0.0
 
