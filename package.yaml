@@ -1,0 +1,46 @@
+name: flowdock-grep
+version: 0.0.0.0
+synopsis: Grep Flowdock logs
+description: Check the readme below
+author: Oleg Grenrus <oleg.grenrus@iki.fi>
+maintainer: Oleg Grenrus <oleg.grenrus@iki.fi>
+license: BSD3
+github: futurice/haskell-flowdock-grep
+category: Web, Productivity
+extra-source-files:
+  - README.md
+
+ghc-options: -Wall
+
+dependencies:
+  - base >= 4.7 && <4.9
+  - aeson
+  - aeson-pretty
+  - ansi-wl-pprint
+  - base64-bytestring
+  - bifunctors
+  - binary
+  - binary-orphans >=0.1.1
+  - binary-tagged
+  - bytestring
+  - deepseq
+  - directory
+  - exceptions
+  - hashable >= 1.2
+  - http-client
+  - http-client-tls
+  - lens
+  - old-locale
+  - optparse-applicative
+  - path
+  - tagged
+  - text
+  - time
+  - transformers
+  - unordered-containers
+  - flowdock-rest >=0.1.0.0
+
+executables:
+  flowdock-grep:
+    main: Main.hs
+    source-dirs: src

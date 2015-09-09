@@ -1,0 +1,9 @@
+flags: {}
+packages:
+- '.'
+- '../flowdock-rest'
+extra-deps:
+- binary-orphans-0.1.1.0
+- binary-tagged-0.1.1.0
+- path-0.5.2
+resolver: lts-2.22
