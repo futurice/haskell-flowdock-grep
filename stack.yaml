@@ -1,7 +1,6 @@
 flags: {}
 packages:
 - '.'
-- '../flowdock-rest'
 extra-deps:
 - binary-orphans-0.1.1.0
 - binary-tagged-0.1.1.0
