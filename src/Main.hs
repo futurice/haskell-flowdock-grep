@@ -24,6 +24,7 @@ import Data.Tagged
 import Data.Text as T
 import Data.Text.IO as T
 import Data.Time
+import qualified Data.Foldable  as F (foldr)
 #if !MIN_VERSION_time(1,5,0)
 import System.Locale
 #endif
@@ -85,6 +86,7 @@ data Opts = Opts
   { optsToken :: AuthToken
   , optsOffline :: Bool
   , optsIgnoreCase :: Bool
+  , optsBy :: Maybe String
   , optsOrganisation :: ParamName Organisation
   , optsFlow :: ParamName Flow
   , optsNeedle :: String
@@ -106,6 +108,7 @@ optsParser maybeToken =
   Opts <$> authTokenParser maybeToken
        <*> switch (long "offline" <> help "Consider only already downloaded logs")
        <*> switch (short 'i' <> long "ignore-case" <> help "Perform case insensitive matching")
+       <*> (optional $ strOption (long "by" <> metavar "USER" <> help "Only posts by USER"))
        <*> paramArgument (metavar "org" <> help "Organisation slug, check it from the web url: wwww.flowdock.com/app/ORG/FLOW/")
        <*> paramArgument (metavar "flow" <> help "Flow slug")
        <*> fmap (L.intercalate " ") (many $ strArgument (metavar "needle"))
@@ -151,23 +154,29 @@ readRows filepath  = do
   let g = (,) <$> many get <*>Data.Binary.Get.isEmpty :: Get ([BinaryTagged (SemanticVersion Row) Row], Bool)
   return $ first (fmap binaryUntag') $ runGet g contents
 
-grepRow :: UserMap -> Bool -> Text -> [Row] -> IO (Maybe Row)
-grepRow users ignoreCase needle rows = go rows
+grepRow :: UserMap -> Bool -> Maybe Text -> Text -> [Row] -> IO (Maybe Row)
+grepRow users ignoreCase by needle rows = go rows
   where go []           = return Nothing
-        go [row]         = p row >> return (Just row)
+        go [row]        = p row >> return (Just row)
         go (row:rows')  = p row >> go rows'
 
         p :: Row -> IO ()
-        p row = when (needle `T.isInfixOf` preprocess (rowText row)) (printRow users row)
+        p row = when (needle `T.isInfixOf` preprocess (rowText row) &&
+                      F.foldr (\nick _ -> nick == findUserNick users (_rowUser row)) True by) (printRow users row)
 
         preprocess :: Text -> Text
         preprocess | ignoreCase = T.toLower
                    | otherwise  = id
 
+findUserNick :: UserMap -> UserId -> Text
+findUserNick users uid =
+  maybe "<ghost>" (^. userNick) $ HM.lookup uid users
+
+
 printRow :: UserMap -> Row -> IO ()
 printRow users (Row _ uid t msg) = do
   tzone <- getTimeZone t
-  let unick = maybe "<ghost>" (^. userNick) $ HM.lookup uid users
+  let unick = findUserNick users uid
   let stamp = formatTime timeLocale "%H:%M:%S" (utcToLocalTime tzone t)
   T.putStrLn $ T.pack stamp <> " <" <> unick <> "> " <> msg
 
@@ -218,6 +227,7 @@ main' settingsDirectory writeToken opts = do
   let org = optsOrganisation opts
   let flow = optsFlow opts
   let ignoreCase = optsIgnoreCase opts
+  let by = fmap T.pack $ optsBy opts
   let needle = optsNeedle' opts
 
   -- Save auth token
@@ -231,22 +241,22 @@ main' settingsDirectory writeToken opts = do
 
   -- Read from cache
   (rows, allRead) <- readRows cachePath `catch` onIOError ([], True)
-  lastRow <- grepRow users ignoreCase needle rows
+  lastRow <- grepRow users ignoreCase by needle rows
   when (not allRead) $ Prelude.putStrLn "Error: corrupted cache file, removing..." >> removeFile (toFilePath cachePath)
 
   -- Read from API
   when (not $ optsOffline opts) $ do
     mgr <- newManager tlsManagerSettings
-    onlineLoop mgr token org flow cachePath users ignoreCase needle lastRow
+    onlineLoop mgr token org flow cachePath users ignoreCase by needle lastRow
 
-onlineLoop :: Manager -> AuthToken -> ParamName Organisation -> ParamName Flow -> Path Abs File -> UserMap -> Bool -> Text -> Maybe Row -> IO ()
-onlineLoop mgr token org flow cachePath users ignoreCase needle = go
+onlineLoop :: Manager -> AuthToken -> ParamName Organisation -> ParamName Flow -> Path Abs File -> UserMap -> Bool -> Maybe Text -> Text -> Maybe Row -> IO ()
+onlineLoop mgr token org flow cachePath users ignoreCase by needle = go
   where go lastRow = do req <- untag <$> messagesRequest org flow (baseMessageOptions $ rowMessageId <$> lastRow)
                         let req' = authenticateRequest token req
                         res <- httpLbs req' mgr
                         rows <- mapMaybe messageToRow <$> throwDecode (responseBody res) :: IO [Row]
                         saveRows cachePath rows
-                        lastRow' <- grepRow users ignoreCase needle rows
+                        lastRow' <- grepRow users ignoreCase by needle rows
                         -- Loop only if we got something
                         when (isJust lastRow') $ go lastRow'
 
