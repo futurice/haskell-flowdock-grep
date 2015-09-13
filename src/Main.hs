@@ -24,7 +24,6 @@ import Data.Tagged
 import Data.Text as T
 import Data.Text.IO as T
 import Data.Time
-import qualified Data.Foldable  as F (foldr)
 #if !MIN_VERSION_time(1,5,0)
 import System.Locale
 #endif
@@ -108,7 +107,7 @@ optsParser maybeToken =
   Opts <$> authTokenParser maybeToken
        <*> switch (long "offline" <> help "Consider only already downloaded logs")
        <*> switch (short 'i' <> long "ignore-case" <> help "Perform case insensitive matching")
-       <*> (optional $ strOption (long "by" <> metavar "USER" <> help "Only posts by USER"))
+       <*> (optional $ strOption (long "by" <> metavar "user" <> help "Only posts by user"))
        <*> paramArgument (metavar "org" <> help "Organisation slug, check it from the web url: wwww.flowdock.com/app/ORG/FLOW/")
        <*> paramArgument (metavar "flow" <> help "Flow slug")
        <*> fmap (L.intercalate " ") (many $ strArgument (metavar "needle"))
@@ -122,8 +121,8 @@ baseMessageOptions sinceId =
 
 data Row = Row
   { rowMessageId  :: MessageId
-  , _rowUser       :: UserId
-  , _rowCreatedAt  :: UTCTime
+  , rowUser       :: UserId
+  , _rowCreatedAt :: UTCTime
   , rowText       :: Text
   }
   deriving (Eq, Ord, Show, Generic)
@@ -161,8 +160,9 @@ grepRow users ignoreCase by needle rows = go rows
         go (row:rows')  = p row >> go rows'
 
         p :: Row -> IO ()
-        p row = when (needle `T.isInfixOf` preprocess (rowText row) &&
-                      F.foldr (\nick _ -> nick == findUserNick users (_rowUser row)) True by) (printRow users row)
+        p row = when (textMatch && nickMatch) (printRow users row)
+          where textMatch = needle `T.isInfixOf` preprocess (rowText row)
+                nickMatch = maybe True (== findUserNick users (rowUser row)) by
 
         preprocess :: Text -> Text
         preprocess | ignoreCase = T.toLower
@@ -227,7 +227,7 @@ main' settingsDirectory writeToken opts = do
   let org = optsOrganisation opts
   let flow = optsFlow opts
   let ignoreCase = optsIgnoreCase opts
-  let by = fmap T.pack $ optsBy opts
+  let by = T.pack <$> optsBy opts
   let needle = optsNeedle' opts
 
   -- Save auth token
