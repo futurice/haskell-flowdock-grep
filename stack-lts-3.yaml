@@ -2,7 +2,5 @@ flags: {}
 packages:
 - '.'
 extra-deps:
-- binary-orphans-0.1.1.0
-- binary-tagged-0.1.1.0
 - flowdock-rest-0.1.0.0
-resolver: lts-3.4
+resolver: lts-3.16
