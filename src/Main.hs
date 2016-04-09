@@ -209,24 +209,22 @@ mkUserMap :: [User] -> UserMap
 mkUserMap = HM.fromList . fmap f
   where f u = (u ^. userId, u)
 
--- | Fetch users from API
-fetchUsers :: AuthToken -> IO UserMap
-fetchUsers token = do
+fetch :: FromJSON t => AuthToken -> IO (Tagged s Request) -> (t -> b) -> IO b
+fetch token request parse = do
   mgr <- newManager tlsManagerSettings
-  req <- untag <$> usersRequest
+  req <- untag <$> request
   let req' = authenticateRequest token req
   res <- httpLbs req' mgr
-  users <- throwDecode (responseBody res)
-  return $ mkUserMap users
+  results <- throwDecode (responseBody res)
+  return $ parse results
 
+-- | Fetch users from API
+fetchUsers :: AuthToken -> IO UserMap
+fetchUsers token = fetch token usersRequest mkUserMap
+
+-- | Fetch joined flows from API
 fetchFlowMap :: AuthToken -> IO FlowMap
-fetchFlowMap token = do
-   mgr <- newManager tlsManagerSettings
-   req <- untag <$> flowsRequest
-   let req' = authenticateRequest token req
-   res <- httpLbs req' mgr
-   flows <- throwDecode (responseBody res)
-   return $ mkFlowMap flows
+fetchFlowMap token = fetch token flowsRequest mkFlowMap
 
 type FlowMap = HM.HashMap (ParamName Organisation) [ParamName Flow]
 
@@ -237,37 +235,28 @@ mkFlowMap flows =
       flowNames = L.map (\groupFlows -> L.map _flowParamName groupFlows) grouped
   in  HM.fromList (organisations `L.zip` flowNames)
 
-readFlows :: Path Abs Dir -> AuthToken -> Bool -> IO FlowMap
-readFlows settingsDirectory token offline = do
-  let filepath = settingsDirectory </> flowsListRelPath
-  let readCached = do eFlows <- taggedDecodeFileOrFail (toFilePath filepath)
-                      case eFlows of
-                        Left (_, err) -> do Prelude.putStrLn $ "Error: corrupted flow list file: " <> err <> "; removing..."
-                                            removeFile (toFilePath filepath)
-                                            return HM.empty
-                        Right x  -> return x
-  let fetchFlowMap' = do flows <- fetchFlowMap token
-                         taggedEncodeFile (toFilePath filepath) flows
-                         return flows
+readCached :: (Binary a, HasSemanticVersion a, HasStructuralInfo a, Eq a) =>
+                 String -> (AuthToken -> IO a) -> Path Rel File -> a -> Path Abs Dir -> AuthToken -> Bool -> IO a
+readCached msg fetcher filePath empty' settingsDirectory token offline = do
+  let filepath = settingsDirectory </> filePath
+  let readCached' = do fromFile <- taggedDecodeFileOrFail (toFilePath filepath)
+                       case fromFile of
+                         Left (_, err) -> do Prelude.putStrLn $ "Error: corrupted " <> msg <> " file: " <> err <> "; removing..."
+                                             removeFile (toFilePath filepath)
+                                             return empty'
+                         Right x  -> return x
+  let fetchOnline' = do values <- fetcher token
+                        taggedEncodeFile (toFilePath filepath) values
+                        return values
   if offline
-     then readCached `catch` onIOError HM.empty
-     else readCached `catch` withIOError (const fetchFlowMap')
+     then readCached' `catch` onIOError empty'
+     else readCached' `catch` withIOError (const fetchOnline')
+
+readFlows :: Path Abs Dir -> AuthToken -> Bool -> IO FlowMap
+readFlows = readCached "flow list" fetchFlowMap flowsListRelPath HM.empty
 
 readUsers :: Path Abs Dir -> AuthToken -> Bool -> IO UserMap
-readUsers settingsDirectory token offline = do
-  let filepath = settingsDirectory </> usersRelPath
-  let readCached = do eUsers <- taggedDecodeFileOrFail (toFilePath filepath)
-                      case eUsers of
-                        Left (_, err) -> do Prelude.putStrLn $ "Error: corrupted user file: " <> err <> "; removing..."
-                                            removeFile (toFilePath filepath)
-                                            return HM.empty
-                        Right x  -> return x
-  let fetchUsers' = do users <- fetchUsers token
-                       taggedEncodeFile (toFilePath filepath) users
-                       return users
-  if offline
-     then readCached `catch` onIOError HM.empty
-     else readCached `catch` withIOError (const fetchUsers')
+readUsers = readCached "user" fetchUsers usersRelPath HM.empty
 
 optsNeedle' :: Opts -> Text
 optsNeedle' opts = if optsIgnoreCase opts
