@@ -121,7 +121,7 @@ optsParser maybeToken =
        <*> switch (long "offline" <> help "Consider only already downloaded logs")
        <*> switch (short 'i' <> long "ignore-case" <> help "Perform case insensitive matching")
        <*> switch (long "all" <> help "Search over all flows")
-       <*> switch (long "with-date" <> help "Show date in search results")
+       <*> switch (long "show-date" <> help "Show date in search results")
        <*> (optional $ strOption (long "by" <> metavar "user" <> help "Only posts by user"))
        <*> paramArgument (metavar "org" <> help "Organisation slug, check it from the web url: wwww.flowdock.com/app/ORG/FLOW/")
        <*> paramArgument (metavar "flow" <> help "Flow slug (mandatory if --all not specified)")
