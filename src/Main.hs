@@ -259,10 +259,17 @@ readUsers :: Path Abs Dir -> AuthToken -> Bool -> IO UserMap
 readUsers = readCached "user" fetchUsers usersRelPath HM.empty
 
 optsNeedle' :: Opts -> Text
-optsNeedle' opts = if optsIgnoreCase opts
-                      then T.toLower needle
-                      else needle
-  where needle = T.pack $ optsNeedle opts
+optsNeedle' opts =
+  let needleArg = T.pack $ optsNeedle opts
+      flowArg = T.pack $
+        if optsSearchAll opts
+           then getParamName $ optsFlow opts else ""
+      combineChar = if T.length needleArg == 0 || T.length flowArg == 0
+                       then "" else " "
+      combined = flowArg <> combineChar <> needleArg
+  in if optsIgnoreCase opts
+          then T.toLower combined
+          else combined
 
 main' :: Path Abs Dir -> Bool -> Opts -> IO ()
 main' settingsDirectory writeToken opts = do
@@ -287,8 +294,7 @@ main' settingsDirectory writeToken opts = do
   case (flow `Prelude.elem` flows, searchAll) of
     (False, False)  -> error $ "You are not a member of flow: " <> getParamName flow <> " in organisation: " <> getParamName org
     (True , False)  -> doFlow token org ignoreCase by needle users showDate False flow
-    _               -> let needle' = (T.pack . getParamName $ flow) <> " " <> needle
-                       in mapM_ (doFlow token org ignoreCase by needle' users showDate True) flows
+    _               -> mapM_ (doFlow token org ignoreCase by needle users showDate True) flows
   where
     doFlow token org ignoreCase by needle users showDate showFlow aFlow = do
       let maybeFlow = if showFlow then Just aFlow else Nothing
