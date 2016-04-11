@@ -1,4 +1,4 @@
--- This file has been generated from package.yaml by hpack version 0.7.0.
+-- This file has been generated from package.yaml by hpack version 0.11.2.
 --
 -- see: https://github.com/sol/hpack
 
@@ -27,9 +27,10 @@ executable flowdock-grep
   main-is: Main.hs
   hs-source-dirs:
       src
-  ghc-options: -Wall
+  ghc-options: -Wall -threaded
   build-depends:
       base >= 4.7 && <4.9
+    , base-compat
     , aeson
     , bifunctors
     , binary
@@ -49,6 +50,7 @@ executable flowdock-grep
     , tagged
     , text
     , time
+    , time-locale-compat
     , unordered-containers
     , flowdock-rest >=0.1.0.0
   default-language: Haskell2010

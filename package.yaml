@@ -14,6 +14,7 @@ ghc-options: -Wall
 
 dependencies:
   - base >= 4.7 && <4.9
+  - base-compat
   - aeson
   - bifunctors
   - binary
@@ -33,6 +34,7 @@ dependencies:
   - tagged
   - text
   - time
+  - time-locale-compat
   - unordered-containers
   - flowdock-rest >=0.1.0.0
 
@@ -40,3 +42,4 @@ executables:
   flowdock-grep:
     main: Main.hs
     source-dirs: src
+    ghc-options: -threaded
