@@ -21,15 +21,16 @@ import Data.Binary.Tagged      (BinaryTagged, HasSemanticVersion,
                                 binaryUntag', taggedDecodeFileOrFail,
                                 taggedEncodeFile)
 import Data.Char               (isSpace)
+import Data.Function           (on)
 import Data.Maybe              (isJust, isNothing, mapMaybe)
-import Data.Tagged             (untag)
+import Data.Tagged             (untag, Tagged)
 import Data.Text               (Text)
 import Data.Time               (UTCTime, formatTime, getTimeZone,
                                 utcToLocalTime)
 import Data.Time.Locale.Compat (TimeLocale, defaultTimeLocale)
 import Data.Typeable           (Typeable)
 import GHC.Generics            (Generic)
-import Network.HTTP.Client     (Manager, httpLbs, newManager, responseBody)
+import Network.HTTP.Client     (Manager, Request, httpLbs, newManager, responseBody)
 import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Options.Applicative
 import Path                    (Abs, Dir, File, Path, Rel, mkRelDir, mkRelFile,
@@ -230,10 +231,9 @@ type FlowMap = HM.HashMap (ParamName Organisation) [ParamName Flow]
 
 mkFlowMap :: [Flow] -> FlowMap
 mkFlowMap flows =
-  let grouped = L.groupBy (\a b -> _flowOrganisation a == _flowOrganisation b) flows
-      organisations = L.map (_foParamName . _flowOrganisation . Prelude.head) grouped
-      flowNames = L.map (\groupFlows -> L.map _flowParamName groupFlows) grouped
-  in  HM.fromList (organisations `L.zip` flowNames)
+  let grouped = L.groupBy ((==) `on` _flowOrganisation) flows
+  in HM.fromList (L.map makePair grouped)
+    where makePair group' = (_foParamName . _flowOrganisation . Prelude.head $ group', L.map _flowParamName group')
 
 readCached :: (Binary a, HasSemanticVersion a, HasStructuralInfo a, Eq a) =>
                  String -> (AuthToken -> IO a) -> Path Rel File -> a -> Path Abs Dir -> AuthToken -> Bool -> IO a
