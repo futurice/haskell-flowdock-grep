@@ -1,40 +1,48 @@
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP                #-}
 {-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE DeriveGeneric      #-}
+{-# LANGUAGE OverloadedStrings  #-}
+{-# LANGUAGE TemplateHaskell    #-}
 module Main (main) where
 
+import Prelude        ()
+import Prelude.Compat as Prelude
+
 import Control.Lens
-import Control.Monad
-import Control.Monad.Catch
-import Data.Aeson
-import Data.Bifunctor
-import Data.Binary.Put
-import Data.Binary.Get
-import Data.Binary.Orphans
-import Data.Binary.Tagged
-import Data.ByteString.Lazy as LBS
-import Data.Char
-import Data.HashMap.Strict as HM
-import Data.List as L
-import Data.Maybe (isNothing, isJust, mapMaybe)
-import Data.Monoid
-import Data.Tagged
-import Data.Text as T
-import Data.Text.IO as T
-import Data.Time
-#if !MIN_VERSION_time(1,5,0)
-import System.Locale
-#endif
-import Data.Typeable
-import GHC.Generics
-import Network.HTTP.Client
-import Network.HTTP.Client.TLS
+import Control.Monad           (when)
+import Control.Monad.Catch     (Exception, MonadCatch (..), MonadThrow (..))
+import Data.Aeson              (FromJSON, eitherDecode)
+import Data.Bifunctor          (first)
+import Data.Binary.Get         (Get, isEmpty, runGet)
+import Data.Binary.Orphans     (Binary (..))
+import Data.Binary.Put         (runPut)
+import Data.Binary.Tagged      (BinaryTagged, HasSemanticVersion,
+                                HasStructuralInfo, SemanticVersion, binaryTag',
+                                binaryUntag', taggedDecodeFileOrFail,
+                                taggedEncodeFile)
+import Data.Char               (isSpace)
+import Data.Maybe              (isJust, isNothing, mapMaybe)
+import Data.Tagged             (untag)
+import Data.Text               (Text)
+import Data.Time               (UTCTime, formatTime, getTimeZone,
+                                utcToLocalTime)
+import Data.Time.Locale.Compat (TimeLocale, defaultTimeLocale)
+import Data.Typeable           (Typeable)
+import GHC.Generics            (Generic)
+import Network.HTTP.Client     (Manager, httpLbs, newManager, responseBody)
+import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Options.Applicative
-import Path
-import System.Directory
-import System.Environment
+import Path                    (Abs, Dir, File, Path, Rel, mkRelDir, mkRelFile,
+                                parent, parseAbsDir, parseRelDir, parseRelFile,
+                                toFilePath, (</>))
+import System.Directory        (createDirectoryIfMissing, removeFile)
+import System.Environment      (lookupEnv)
+
+import qualified Data.ByteString.Lazy as LBS
+import qualified Data.HashMap.Strict  as HM
+import qualified Data.List            as L
+import qualified Data.Text            as T
+import qualified Data.Text.IO         as T
 
 import Chat.Flowdock.REST
 
@@ -82,13 +90,13 @@ writeAuthToken dir token = do
   Prelude.writeFile filepath (getAuthToken token)
 
 data Opts = Opts
-  { optsToken :: AuthToken
-  , optsOffline :: Bool
-  , optsIgnoreCase :: Bool
-  , optsBy :: Maybe String
+  { optsToken        :: AuthToken
+  , optsOffline      :: Bool
+  , optsIgnoreCase   :: Bool
+  , optsBy           :: Maybe String
   , optsOrganisation :: ParamName Organisation
-  , optsFlow :: ParamName Flow
-  , optsNeedle :: String
+  , optsFlow         :: ParamName Flow
+  , optsNeedle       :: String
   }
   deriving Show
 
