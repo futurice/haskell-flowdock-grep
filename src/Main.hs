@@ -21,6 +21,7 @@ import Data.Binary.Tagged      (BinaryTagged, HasSemanticVersion,
                                 binaryUntag', taggedDecodeFileOrFail,
                                 taggedEncodeFile)
 import Data.Char               (isSpace)
+import Data.Foldable           (traverse_)
 import Data.Function           (on)
 import Data.Maybe              (isJust, isNothing, mapMaybe)
 import Data.Tagged             (Tagged, untag)
@@ -99,11 +100,10 @@ data Opts = Opts
   { optsToken        :: AuthToken
   , optsOffline      :: Bool
   , optsIgnoreCase   :: Bool
-  , optsSearchAll    :: Bool
   , optsShowDate     :: Bool
   , optsBy           :: Maybe String
   , optsOrganisation :: ParamName Organisation
-  , optsFlow         :: ParamName Flow
+  , optsFlow         :: Maybe (ParamName Flow)
   , optsNeedle       :: String
   }
   deriving Show
@@ -113,7 +113,7 @@ paramArgument m = mkParamName <$> strArgument m
 
 authTokenParser :: Maybe AuthToken -> Parser AuthToken
 authTokenParser maybeToken =
-    option (eitherReader er) (long "token" <> metavar "token" <> help "Flowdock authentication token: see https://flowdock.com/account/tokens" <> def)
+    option (eitherReader er) (short 't' <> long "token" <> metavar "token" <> help "Flowdock authentication token: see https://flowdock.com/account/tokens" <> def)
   where
     def = maybe idm value maybeToken
     er = Right . AuthToken
@@ -121,14 +121,19 @@ authTokenParser maybeToken =
 optsParser :: Maybe AuthToken -> Parser Opts
 optsParser maybeToken =
   Opts <$> authTokenParser maybeToken
-       <*> switch (long "offline" <> help "Consider only already downloaded logs")
+       <*> switch (short 'o' <> long "offline"     <> help "Consider only already downloaded logs")
        <*> switch (short 'i' <> long "ignore-case" <> help "Perform case insensitive matching")
-       <*> switch (long "all" <> help "Search over all flows")
-       <*> switch (long "show-date" <> help "Show date in search results")
-       <*> (optional $ strOption (long "by" <> metavar "user" <> help "Only posts by user"))
+       <*> switch (short 'd' <> long "show-date"   <> help "Show date in search results")
+       <*> (optional $ strOption (short 'u' <> long "by" <> metavar "user" <> help "Only posts by user"))
        <*> paramArgument (metavar "org" <> help "Organisation slug, check it from the web url: wwww.flowdock.com/app/ORG/FLOW/")
-       <*> paramArgument (metavar "flow" <> help "Flow slug (mandatory if --all not specified)")
+       <*> flowParser
        <*> fmap (L.intercalate " ") (many $ strArgument (metavar "needle"))
+
+flowParser :: Parser (Maybe (ParamName Flow))
+flowParser = Nothing <$ allParser <|> Just <$> flowNameParser
+  where
+    allParser = flag' () (short 'a' <> long "all" <> help "Search over all flows")
+    flowNameParser = paramArgument (metavar "flow" <> help "Flow slug (mandatory if --all not specified)")
 
 baseMessageOptions :: Maybe MessageId -> MessageOptions
 baseMessageOptions sinceId =
@@ -200,7 +205,7 @@ printRow users (Row _ uid t msg) showDate maybeFlow = do
   let unick = findUserNick users uid
   let formatStr = if showDate then "%Y-%m-%d %H:%M:%S" else "%H:%M:%S"
   let stamp = formatTime timeLocale formatStr (utcToLocalTime tzone t)
-  let prefix = maybe "" ((<> " - ") . T.pack . getParamName) maybeFlow
+  let prefix = maybe "" ((<> " ") . T.pack . getParamName) maybeFlow
   T.putStrLn $ prefix <> T.pack stamp <> " <" <> unick <> "> " <> msg
 
 timeLocale :: TimeLocale
@@ -265,25 +270,18 @@ readUsers = readCached "user" fetchUsers usersRelPath HM.empty
 
 optsNeedle' :: Opts -> Text
 optsNeedle' opts =
-  let needleArg = T.pack $ optsNeedle opts
-      flowArg = T.pack $
-        if optsSearchAll opts
-           then getParamName $ optsFlow opts else ""
-      combineChar = if T.length needleArg == 0 || T.length flowArg == 0
-                       then "" else " "
-      combined = flowArg <> combineChar <> needleArg
-  in if optsIgnoreCase opts
-          then T.toLower combined
-          else combined
+    if optsIgnoreCase opts
+        then T.toLower needleArg
+        else needleArg
+  where
+    needleArg = T.pack $ optsNeedle opts
 
 main' :: Path Abs Dir -> Bool -> Opts -> IO ()
 main' settingsDirectory writeToken opts = do
   let token = optsToken opts
   let org = optsOrganisation opts
-  let flow = optsFlow opts
   let ignoreCase = optsIgnoreCase opts
   let by = T.pack <$> optsBy opts
-  let searchAll = optsSearchAll opts
   let showDate = optsShowDate opts
   let needle = optsNeedle' opts
 
@@ -296,10 +294,12 @@ main' settingsDirectory writeToken opts = do
   flowsMap <- readFlows settingsDirectory token (optsOffline opts)
   let flows = lookupFlows flowsMap org
 
-  case (flow `Prelude.elem` flows, searchAll) of
-    (False, False)  -> error $ "You are not a member of flow: " <> getParamName flow <> " in organisation: " <> getParamName org
-    (True , False)  -> doFlow token org ignoreCase by needle users showDate False flow
-    _               -> mapM_ (doFlow token org ignoreCase by needle users showDate True) flows
+  case optsFlow opts of
+    Nothing -> traverse_ (doFlow token org ignoreCase by needle users showDate True) flows
+    Just flow
+      | flow `elem` flows -> doFlow token org ignoreCase by needle users showDate False flow
+      | otherwise
+          -> error $ "You are not a member of flow: " <> getParamName flow <> " in organisation: " <> getParamName org
   where
     doFlow token org ignoreCase by needle users showDate showFlow aFlow = do
       let maybeFlow = if showFlow then Just aFlow else Nothing

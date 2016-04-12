@@ -1,0 +1,15 @@
+resolver: lts-5.12
+packages:
+- '.'
+extra-deps:
+- binary-tagged-0.1.4.0
+- case-insensitive-1.2.0.5
+- containers-0.5.7.1
+- flowdock-rest-0.1.0.0
+- generics-sop-0.1.1.2
+- lens-4.12.3
+- optparse-applicative-0.12.1.0
+- reflection-2
+- semigroups-0.16.2.2
+- unordered-containers-0.2.7.0
+flags: {}

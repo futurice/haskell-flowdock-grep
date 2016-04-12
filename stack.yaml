@@ -1,9 +1,1 @@
-resolver: lts-2.22
-packages:
-- '.'
-extra-deps:
-- binary-orphans-0.1.4.0
-- binary-tagged-0.1.4.0
-- flowdock-rest-0.1.0.0
-- path-0.5.7
-flags: {}
+stack-lts-5.yaml
