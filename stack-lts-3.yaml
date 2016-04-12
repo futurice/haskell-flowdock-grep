@@ -1,6 +1,7 @@
-flags: {}
+resolver: lts-3.22
 packages:
 - '.'
 extra-deps:
+- binary-tagged-0.1.4.0
 - flowdock-rest-0.1.0.0
-resolver: lts-3.16
+flags: {}

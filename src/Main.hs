@@ -23,14 +23,15 @@ import Data.Binary.Tagged      (BinaryTagged, HasSemanticVersion,
 import Data.Char               (isSpace)
 import Data.Function           (on)
 import Data.Maybe              (isJust, isNothing, mapMaybe)
-import Data.Tagged             (untag, Tagged)
+import Data.Tagged             (Tagged, untag)
 import Data.Text               (Text)
 import Data.Time               (UTCTime, formatTime, getTimeZone,
                                 utcToLocalTime)
 import Data.Time.Locale.Compat (TimeLocale, defaultTimeLocale)
 import Data.Typeable           (Typeable)
 import GHC.Generics            (Generic)
-import Network.HTTP.Client     (Manager, Request, httpLbs, newManager, responseBody)
+import Network.HTTP.Client     (Manager, Request, httpLbs, newManager,
+                                responseBody)
 import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Options.Applicative
 import Path                    (Abs, Dir, File, Path, Rel, mkRelDir, mkRelFile,
@@ -42,6 +43,7 @@ import System.Environment      (lookupEnv)
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.HashMap.Strict  as HM
 import qualified Data.List            as L
+import qualified Data.List.NonEmpty   as NE
 import qualified Data.Text            as T
 import qualified Data.Text.IO         as T
 
@@ -190,7 +192,7 @@ findUserNick users uid =
 
 lookupFlows :: FlowMap -> ParamName Organisation -> [ParamName Flow]
 lookupFlows flowsMap org =
-  maybe [] id $ HM.lookup org flowsMap
+  maybe [] NE.toList $ HM.lookup org flowsMap
 
 printRow :: UserMap -> Row -> Bool -> Maybe (ParamName Flow) -> IO ()
 printRow users (Row _ uid t msg) showDate maybeFlow = do
@@ -227,13 +229,16 @@ fetchUsers token = fetch token usersRequest mkUserMap
 fetchFlowMap :: AuthToken -> IO FlowMap
 fetchFlowMap token = fetch token flowsRequest mkFlowMap
 
-type FlowMap = HM.HashMap (ParamName Organisation) [ParamName Flow]
+type FlowMap = HM.HashMap (ParamName Organisation) (NE.NonEmpty (ParamName Flow))
 
 mkFlowMap :: [Flow] -> FlowMap
-mkFlowMap flows =
-  let grouped = L.groupBy ((==) `on` _flowOrganisation) flows
-  in HM.fromList (L.map makePair grouped)
-    where makePair group' = (_foParamName . _flowOrganisation . Prelude.head $ group', L.map _flowParamName group')
+mkFlowMap flows = HM.fromList (L.map makePair grouped)
+  where
+    grouped = NE.groupBy ((==) `on` _flowOrganisation) flows
+    makePair group' =
+        ( _foParamName . _flowOrganisation . NE.head $ group'
+        , NE.map _flowParamName group'
+        )
 
 readCached :: (Binary a, HasSemanticVersion a, HasStructuralInfo a, Eq a) =>
                  String -> (AuthToken -> IO a) -> Path Rel File -> a -> Path Abs Dir -> AuthToken -> Bool -> IO a
