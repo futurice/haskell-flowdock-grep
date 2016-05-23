@@ -65,6 +65,16 @@ matrix:
         - ghc-7.10.3
         - libgmp-dev
     compiler: ! ': # ghc-7.10.3 cabal-1.22'
+  - env: GHCVER=8.0.1 CABALVER=1.24
+    addons:
+      apt:
+        sources:
+        - hvr-ghc
+        packages:
+        - cabal-install-1.24
+        - ghc-8.0.1
+        - libgmp-dev
+    compiler: ! ': # ghc-8.0.1 cabal-1.24'
   - env: GHCVER=head CABALVER=1.22
     addons:
       apt:
@@ -76,6 +86,7 @@ matrix:
         - libgmp-dev
     compiler: ! ': # ghc-head cabal-1.22'
   allow_failures:
+  - env: GHCVER=8.0.1 CABALVER=1.24
   - env: GHCVER=head CABALVER=1.22
 branches:
   only:

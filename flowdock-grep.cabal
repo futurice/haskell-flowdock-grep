@@ -1,4 +1,4 @@
--- This file has been generated from package.yaml by hpack version 0.11.2.
+-- This file has been generated from package.yaml by hpack version 0.14.0.
 --
 -- see: https://github.com/sol/hpack
 
@@ -29,7 +29,7 @@ executable flowdock-grep
       src
   ghc-options: -Wall -threaded
   build-depends:
-      base >= 4.7 && <4.9
+      base >= 4.7 && <4.10
     , base-compat
     , aeson
     , bifunctors
