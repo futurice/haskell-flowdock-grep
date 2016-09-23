@@ -1,0 +1,13 @@
+resolver: lts-6.18
+packages:
+- '.'
+extra-deps:
+- aeson-0.9.0.1
+- case-insensitive-1.2.0.5
+- flowdock-rest-0.1.0.0
+- generics-sop-0.1.1.2
+- lens-4.12.3
+- reflection-2
+- semigroups-0.16.2.2
+flags: {}
+extra-package-dbs: []
