@@ -5,7 +5,7 @@
 {-# LANGUAGE TemplateHaskell    #-}
 module Main (main) where
 
-import Prelude        ()
+import Prelude ()
 import Prelude.Compat as Prelude
 
 import Control.Lens
@@ -16,28 +16,28 @@ import Data.Bifunctor          (first)
 import Data.Binary.Get         (Get, isEmpty, runGet)
 import Data.Binary.Orphans     (Binary (..))
 import Data.Binary.Put         (runPut)
-import Data.Binary.Tagged      (BinaryTagged, HasSemanticVersion,
-                                HasStructuralInfo, SemanticVersion, binaryTag',
-                                binaryUntag', taggedDecodeFileOrFail,
-                                taggedEncodeFile)
+import Data.Binary.Tagged
+       (BinaryTagged, HasSemanticVersion, HasStructuralInfo, SemanticVersion,
+       binaryTag', binaryUntag', taggedDecodeFileOrFail, taggedEncodeFile)
 import Data.Char               (isSpace)
 import Data.Foldable           (traverse_)
 import Data.Function           (on)
 import Data.Maybe              (isJust, isNothing, mapMaybe)
+import Data.Monoid             ((<>))
 import Data.Tagged             (Tagged, untag)
 import Data.Text               (Text)
-import Data.Time               (UTCTime, formatTime, getTimeZone,
-                                utcToLocalTime)
+import Data.Time
+       (UTCTime, formatTime, getTimeZone, utcToLocalTime)
 import Data.Time.Locale.Compat (TimeLocale, defaultTimeLocale)
 import Data.Typeable           (Typeable)
 import GHC.Generics            (Generic)
-import Network.HTTP.Client     (Manager, Request, httpLbs, newManager,
-                                responseBody)
+import Network.HTTP.Client
+       (Manager, Request, httpLbs, newManager, responseBody)
 import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Options.Applicative
-import Path                    (Abs, Dir, File, Path, Rel, mkRelDir, mkRelFile,
-                                parent, parseAbsDir, parseRelDir, parseRelFile,
-                                toFilePath, (</>))
+import Path
+       (Abs, Dir, File, Path, Rel, mkRelDir, mkRelFile, parent, parseAbsDir,
+       parseRelDir, parseRelFile, toFilePath, (</>))
 import System.Directory        (createDirectoryIfMissing, removeFile)
 import System.Environment      (lookupEnv)
 
