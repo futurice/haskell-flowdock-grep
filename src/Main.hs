@@ -49,6 +49,7 @@ import qualified Data.Text            as T
 import qualified Data.Text.IO         as T
 
 import Chat.Flowdock.REST
+import Chat.Flowdock.REST.Internal (getIdentifier)
 
 stringTrim :: String -> String
 stringTrim = r . ltrim . r . ltrim
@@ -101,6 +102,7 @@ data Opts = Opts
   , optsOffline      :: Bool
   , optsIgnoreCase   :: Bool
   , optsShowDate     :: Bool
+  , optsShowMsgUrl   :: Bool
   , optsBy           :: Maybe String
   , optsOrganisation :: ParamName Organisation
   , optsFlow         :: Maybe (ParamName Flow)
@@ -124,6 +126,7 @@ optsParser maybeToken =
        <*> switch (short 'o' <> long "offline"     <> help "Consider only already downloaded logs")
        <*> switch (short 'i' <> long "ignore-case" <> help "Perform case insensitive matching")
        <*> switch (short 'd' <> long "show-date"   <> help "Show date in search results")
+       <*> switch (short 'u' <> long "show-url"    <> help "Show message URL in search results")
        <*> (optional $ strOption (short 'u' <> long "by" <> metavar "user" <> help "Only posts by user"))
        <*> paramArgument (metavar "org" <> help "Organisation slug, check it from the web url: wwww.flowdock.com/app/ORG/FLOW/")
        <*> flowParser
@@ -176,14 +179,14 @@ readRows filepath  = do
   let g = (,) <$> many get <*>Data.Binary.Get.isEmpty :: Get ([BinaryTagged (SemanticVersion Row) Row], Bool)
   return $ first (fmap binaryUntag') $ runGet g contents
 
-grepRow :: UserMap -> Bool -> Maybe Text -> Text -> Bool -> Maybe (ParamName Flow) -> [Row] -> IO (Maybe Row)
-grepRow users ignoreCase by needle showDate maybeFlow rows = go rows
+grepRow :: UserMap -> Bool -> Maybe Text -> Text -> Bool -> Maybe (ParamName Flow) -> ParamName Organisation -> Bool -> [Row] -> IO (Maybe Row)
+grepRow users ignoreCase by needle showDate maybeFlow org showMsgUrl rows = go rows
   where go []           = return Nothing
         go [row]        = p row >> return (Just row)
         go (row:rows')  = p row >> go rows'
 
         p :: Row -> IO ()
-        p row = when (textMatch && nickMatch) (printRow users row showDate maybeFlow)
+        p row = when (textMatch && nickMatch) (printRow users row showDate maybeFlow org showMsgUrl)
           where textMatch = needle `T.isInfixOf` preprocess (rowText row)
                 nickMatch = maybe True (== findUserNick users (rowUser row)) by
 
@@ -199,14 +202,24 @@ lookupFlows :: FlowMap -> ParamName Organisation -> [ParamName Flow]
 lookupFlows flowsMap org =
   maybe [] NE.toList $ HM.lookup org flowsMap
 
-printRow :: UserMap -> Row -> Bool -> Maybe (ParamName Flow) -> IO ()
-printRow users (Row _ uid t msg) showDate maybeFlow = do
+printRow :: UserMap -> Row -> Bool -> Maybe (ParamName Flow) -> ParamName Organisation -> Bool -> IO ()
+printRow users (Row id' uid t msg) showDate maybeFlow org showMsgUrl = do
   tzone <- getTimeZone t
   let unick = findUserNick users uid
   let formatStr = if showDate then "%Y-%m-%d %H:%M:%S" else "%H:%M:%S"
   let stamp = formatTime timeLocale formatStr (utcToLocalTime tzone t)
-  let prefix = maybe "" ((<> " ") . T.pack . getParamName) maybeFlow
-  T.putStrLn $ prefix <> T.pack stamp <> " <" <> unick <> "> " <> msg
+  let prefix = if showMsgUrl     then "" else maybe "" ((<> " ") . T.pack . getParamName) maybeFlow
+  let msgUrl = if not showMsgUrl then "" else
+        maybe "" (\flow ->
+                    "https://flowdock.com/app/"
+                    <> T.pack (getParamName org)
+                    <> "/"
+                    <> T.pack (getParamName flow)
+                    <> "/messages/"
+                    <> T.pack (show (getIdentifier id'))
+                   <> " "
+                 ) maybeFlow
+  T.putStrLn $ msgUrl <> prefix <> T.pack stamp <> " <" <> unick <> "> " <> msg
 
 timeLocale :: TimeLocale
 timeLocale = defaultTimeLocale
@@ -284,6 +297,7 @@ main' settingsDirectory writeToken opts = do
   let by = T.pack <$> optsBy opts
   let showDate = optsShowDate opts
   let needle = optsNeedle' opts
+  let showMsgUrl = optsShowMsgUrl opts
 
   -- Save auth token
   when writeToken $ writeAuthToken settingsDirectory token
@@ -295,13 +309,13 @@ main' settingsDirectory writeToken opts = do
   let flows = lookupFlows flowsMap org
 
   case optsFlow opts of
-    Nothing -> traverse_ (doFlow token org ignoreCase by needle users showDate True) flows
+    Nothing -> traverse_ (doFlow token org ignoreCase by needle users showDate True showMsgUrl) flows
     Just flow
-      | flow `elem` flows -> doFlow token org ignoreCase by needle users showDate False flow
+      | flow `elem` flows -> doFlow token org ignoreCase by needle users showDate False showMsgUrl flow
       | otherwise
           -> error $ "You are not a member of flow: " <> getParamName flow <> " in organisation: " <> getParamName org
   where
-    doFlow token org ignoreCase by needle users showDate showFlow aFlow = do
+    doFlow token org ignoreCase by needle users showDate showFlow showMsgUrl aFlow = do
       let maybeFlow = if showFlow then Just aFlow else Nothing
 
       -- Cache file
@@ -309,23 +323,23 @@ main' settingsDirectory writeToken opts = do
 
       -- Read from cache
       (rows, allRead) <- readRows cachePath `catch` onIOError ([], True)
-      lastRow <- grepRow users ignoreCase by needle showDate maybeFlow rows
+      lastRow <- grepRow users ignoreCase by needle showDate maybeFlow org showMsgUrl rows
       when (not allRead) $ Prelude.putStrLn "Error: corrupted cache file, removing..." >> removeFile (toFilePath cachePath)
 
       -- Read from API
       when (not $ optsOffline opts) $ do
         mgr <- newManager tlsManagerSettings
-        onlineLoop mgr token org aFlow cachePath users ignoreCase by needle showDate maybeFlow lastRow
+        onlineLoop mgr token org aFlow cachePath users ignoreCase by needle showDate maybeFlow showMsgUrl lastRow
 
 
-onlineLoop :: Manager -> AuthToken -> ParamName Organisation -> ParamName Flow -> Path Abs File -> UserMap -> Bool -> Maybe Text -> Text -> Bool -> Maybe (ParamName Flow) -> Maybe Row -> IO ()
-onlineLoop mgr token org flow cachePath users ignoreCase by needle showDate maybeFlow = go
+onlineLoop :: Manager -> AuthToken -> ParamName Organisation -> ParamName Flow -> Path Abs File -> UserMap -> Bool -> Maybe Text -> Text -> Bool -> Maybe (ParamName Flow) -> Bool -> Maybe Row -> IO ()
+onlineLoop mgr token org flow cachePath users ignoreCase by needle showDate maybeFlow showMsgUrl = go
   where go lastRow = do req <- untag <$> messagesRequest org flow (baseMessageOptions $ rowMessageId <$> lastRow)
                         let req' = authenticateRequest token req
                         res <- httpLbs req' mgr
                         rows <- mapMaybe messageToRow <$> throwDecode (responseBody res) :: IO [Row]
                         saveRows cachePath rows
-                        lastRow' <- grepRow users ignoreCase by needle showDate maybeFlow rows
+                        lastRow' <- grepRow users ignoreCase by needle showDate maybeFlow org showMsgUrl rows
                         -- Loop only if we got something
                         when (isJust lastRow') $ go lastRow'
 
