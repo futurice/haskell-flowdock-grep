@@ -245,13 +245,11 @@ printRow users (Row rowId uid t tags msg) opts = do
     T.putStr $ "> " <> msg
     withColors $ ANSI.setSGR [ANSI.SetColor ANSI.Foreground ANSI.Dull ANSI.White]
     T.putStr tags'
-    ANSI.setSGR [ANSI.Reset]
     T.putStrLn msgUrl
     withColors $ ANSI.setSGR [ANSI.Reset]
-    T.putStrLn ""
   where
     msgUrl' flow = mconcat
-        [ "https://flowdock.com/app/"
+        [ " https://flowdock.com/app/"
         , T.pack (getParamName $ optsOrganisation opts)
         , "/"
         , T.pack (getParamName flow)
@@ -359,9 +357,7 @@ main' settingsDirectory writeToken opts = do
   where
     doFlow :: UserMap -> Bool -> ParamName Flow -> IO ()
     doFlow users showFlow aFlow = do
-      -- We pretend that...
-      let maybeFlow = if showFlow then Just aFlow else Nothing
-      let opts' = opts { optsFlow = maybeFlow }
+      let opts' = opts { optsFlow = if showFlow || optsShowMsgUrl opts then Just aFlow else Nothing}
 
       -- Cache file
       cachePath <- parseCachePath settingsDirectory (optsOrganisation opts') aFlow
