@@ -20,16 +20,21 @@ import Data.Binary.Tagged
        (BinaryTagged, HasSemanticVersion, HasStructuralInfo, SemanticVersion,
        binaryTag', binaryUntag', taggedDecodeFileOrFail, taggedEncodeFile)
 import Data.Char               (isSpace)
-import Data.Foldable           (traverse_)
+import Data.Foldable           (toList, traverse_)
 import Data.Function           (on)
 import Data.Maybe              (isJust, isNothing, mapMaybe)
 import Data.Monoid             ((<>))
 import Data.Tagged             (Tagged, untag)
 import Data.Text               (Text)
+import Data.Monoid
+import Data.Tagged             (Tagged, untag)
+import Data.Text               (Text)
+import Data.Text.Lens          (packed)
 import Data.Time
        (UTCTime, formatTime, getTimeZone, utcToLocalTime)
 import Data.Time.Locale.Compat (TimeLocale, defaultTimeLocale)
 import Data.Typeable           (Typeable)
+import Data.Vector             (Vector)
 import GHC.Generics            (Generic)
 import Network.HTTP.Client
        (Manager, Request, httpLbs, newManager, responseBody)
@@ -47,6 +52,8 @@ import qualified Data.List            as L
 import qualified Data.List.NonEmpty   as NE
 import qualified Data.Text            as T
 import qualified Data.Text.IO         as T
+import qualified Data.Vector          as V
+import qualified System.Console.ANSI  as ANSI
 
 import Chat.Flowdock.REST
 import Chat.Flowdock.REST.Internal (getIdentifier)
@@ -149,6 +156,7 @@ data Row = Row
   { rowMessageId  :: MessageId
   , rowUser       :: UserId
   , _rowCreatedAt :: UTCTime
+  , _rowTags      :: !(Vector Tag)
   , rowText       :: Text
   }
   deriving (Eq, Ord, Show, Generic)
@@ -158,10 +166,21 @@ instance HasStructuralInfo Row
 instance HasSemanticVersion Row
 
 messageToRow :: Message -> Maybe Row
-messageToRow msg = Row (msg ^. msgId) (msg ^. msgUser) (msg ^. msgCreatedAt) <$> messageContentToRow (msg ^. msgContent)
-  where messageContentToRow (MTMessage text)  = Just text
-        messageContentToRow (MTComment comm)  = Just (comm ^. commentText)
-        messageContentToRow _                 = Nothing
+messageToRow msg = Row
+    (msg ^. msgId)
+    (msg ^. msgUser)
+    (msg ^. msgCreatedAt)
+    (filterTags $ msg ^. msgTags)
+    <$> messageContentToRow (msg ^. msgContent)
+  where
+    messageContentToRow (MTMessage text)  = Just text
+    messageContentToRow (MTComment comm)  = Just (comm ^. commentText)
+    messageContentToRow _                 = Nothing
+
+    filterTags = V.filter (not . tagPredicate . getTag)
+    tagPredicate t =
+        T.isPrefixOf "influx:" t
+        && T.isInfixOf ":highlight:" t
 
 parseCachePath :: Path Abs Dir -> ParamName Organisation -> ParamName Flow -> IO (Path Abs File)
 parseCachePath dir org flow =
@@ -196,14 +215,16 @@ grepRow users ignoreCase by needle showDate maybeFlow org showMsgUrl rows = go r
 
 findUserNick :: UserMap -> UserId -> Text
 findUserNick users uid =
-  maybe "<ghost>" (^. userNick) $ HM.lookup uid users
+    maybe ("<" <> uid' <> ">") (^. userNick) $ HM.lookup uid users
+  where
+    uid' = show (getIdentifier uid) ^. packed
 
 lookupFlows :: FlowMap -> ParamName Organisation -> [ParamName Flow]
 lookupFlows flowsMap org =
   maybe [] NE.toList $ HM.lookup org flowsMap
 
 printRow :: UserMap -> Row -> Bool -> Maybe (ParamName Flow) -> ParamName Organisation -> Bool -> IO ()
-printRow users (Row id' uid t msg) showDate maybeFlow org showMsgUrl = do
+printRow users (Row id' uid t tags msg) showDate maybeFlow org showMsgUrl = do
   tzone <- getTimeZone t
   let unick = findUserNick users uid
   let formatStr = if showDate then "%Y-%m-%d %H:%M:%S" else "%H:%M:%S"
@@ -219,7 +240,14 @@ printRow users (Row id' uid t msg) showDate maybeFlow org showMsgUrl = do
                     <> T.pack (show (getIdentifier id'))
                    <> " "
                  ) maybeFlow
-  T.putStrLn $ msgUrl <> prefix <> T.pack stamp <> " <" <> unick <> "> " <> msg
+  let prefix = maybe "" ((<> " ") . T.pack . getParamName) maybeFlow
+  let tags' | null tags = ""
+            | otherwise = foldMap ((" #" <>) . getTag) $ toList tags
+  T.putStr $ prefix <> T.pack stamp <> " <" <> unick <> "> " <> msg
+  ANSI.setSGR [ANSI.SetColor ANSI.Foreground ANSI.Dull ANSI.White]
+  T.putStr tags'
+  ANSI.setSGR [ANSI.Reset]
+  T.putStrLn msgUrl
 
 timeLocale :: TimeLocale
 timeLocale = defaultTimeLocale
@@ -258,8 +286,9 @@ mkFlowMap flows = HM.fromList (L.map makePair grouped)
         , NE.map _flowParamName group'
         )
 
-readCached :: (Binary a, HasSemanticVersion a, HasStructuralInfo a, Eq a) =>
-                 String -> (AuthToken -> IO a) -> Path Rel File -> a -> Path Abs Dir -> AuthToken -> Bool -> IO a
+readCached
+    :: (Binary a, HasSemanticVersion a, HasStructuralInfo a)
+    => String -> (AuthToken -> IO a) -> Path Rel File -> a -> Path Abs Dir -> AuthToken -> Bool -> IO a
 readCached msg fetcher filePath empty' settingsDirectory token offline = do
   let filepath = settingsDirectory </> filePath
   let readCached' = do fromFile <- taggedDecodeFileOrFail (toFilePath filepath)

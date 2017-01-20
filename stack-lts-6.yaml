@@ -1,13 +1,11 @@
-resolver: lts-6.18
+resolver: lts-6.27
 packages:
 - '.'
+- location:
+    git: https://github.com/futurice/haskell-flowdock-rest.git
+    commit: 09f1de5b68c312503fe13bf9752e7456f8ede1e4
+  extra-dep: true
 extra-deps:
-- aeson-0.9.0.1
-- case-insensitive-1.2.0.5
-- flowdock-rest-0.1.0.0
-- generics-sop-0.1.1.2
-- lens-4.12.3
-- reflection-2
-- semigroups-0.16.2.2
+- ansi-pretty-0.1.2.1
 flags: {}
 extra-package-dbs: []
