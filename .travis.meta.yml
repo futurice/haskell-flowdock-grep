@@ -1,20 +1,8 @@
-language: haskell-multi-ghc
+language: haskell-stack
 
 env:
-  - GHCVER=7.8.4 CABALVER=1.18
-  - GHCVER=7.10.3 CABALVER=1.22
-  - GHCVER=8.0.1 CABALVER=1.24
-  - GHCVER=head CABALVER=1.22
-
-matrix:
-  fast_finish: true
-  allow_failures:
-    - env: GHCVER=8.0.1 CABALVER=1.24
-    - env: GHCVER=head CABALVER=1.22
+  - GHCVER=7.10.3 STACK_YAML=stack.yaml PEDANTIC=YES
 
 branches:
   only:
     - master
-
-git:
-  submodules: false

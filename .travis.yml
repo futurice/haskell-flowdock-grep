@@ -3,100 +3,51 @@
 sudo: false
 language: c
 before_install:
-- unset CC
-- export PATH=/opt/ghc/$GHCVER/bin:/opt/cabal/$CABALVER/bin:$PATH
+- export CACHE_NAME="$GHCVER $STACK_YAML $STACK_SOLVER"
+- JOB_START_TIME=$(date +%s)
+- export PATH=/opt/ghc/$GHCVER/bin:/opt/alex/3.1.7/bin:/opt/happy/1.19.5/bin:$PATH
+- if [ -n "$CABALVER" ]; then export PATH=/opt/cabal/$CABALVER/bin:$PATH; fi
+- export PATH=~/.local/bin:$PATH
+- if [ ! -e ~/.local/bin/stack ]; then mkdir -p ~/.local/bin; travis_retry curl -L
+  https://www.stackage.org/stack/linux-x86_64 | tar xz --wildcards --strip-components=1
+  -C ~/.local/bin '*/stack'; fi
 - echo "$(ghc --version) [$(ghc --print-project-git-commit-id 2> /dev/null || echo
   '?')]"
-- cabal --version
+- stack +RTS -N2 -RTS --version
 - ghc --version
-- if [ "$NOTESTS" = "YES" ]; then export CABALCONFOPTS="$CABALFLAGS"; export CABALTEST="true";
-  else export CABALCONFOPTS="$CABALFLAGS --enable-tests"; export CABALTEST="cabal
-  test"; fi
-- if [ ! "$NOBENCHMARKS" = "YES"]; then export CABALCONFOPTS="$CABALCONFOPTS --enable-benchmarks";
-  fi
-- if [ "$PEDANTIC" = "YES" ]; then export CABALBUILDOPTS="--ghc-options=-Werror --ghc-options=-Wall";
-  fi
+- if [ -n "$CABALVER" ]; then cabal --version; fi
 install:
-- if [ -f $HOME/.cabal/packages/hackage.haskell.org/00-index.tar.gz ]; then zcat $HOME/.cabal/packages/hackage.haskell.org/00-index.tar.gz
-  > $HOME/.cabal/packages/hackage.haskell.org/00-index.tar; ls -l $HOME/.cabal/packages/hackage.haskell.org/;
-  fi; cabal update; sed -i 's/^jobs:/-- jobs:/' ${HOME}/.cabal/config; if [ -n "$CABALCONFIG"
-  ]; then cp $CABALCONFIG cabal.config; fi; if [ -n "$STACKAGESNAPSHOT" ]; then curl
-  --silent https://www.stackage.org/$STACKAGESNAPSHOT/cabal.config | grep -v "$(cabal
-  info . -v0 | head -n 1 | awk '{ print $2 }' | sed -E 's/-[0-9]+(\.[0-9]+)+//') =="
-  > cabal.config; fi; cabal install --only-dependencies $CABALCONFOPTS --dry -v >
-  installplan.txt; sed -i -e '1,/^Resolving /d' installplan.txt; cat installplan.txt;
-  if diff -u $HOME/.cabsnap/installplan.txt installplan.txt; then echo "cabal build-cache
-  HIT"; rm -rfv .ghc; cp -av $HOME/.cabsnap/ghc $HOME/.ghc; cp -av $HOME/.cabsnap/lib
-  $HOME/.cabsnap/share $HOME/.cabsnap/bin $HOME/.cabal/; else echo "cabal build-cache
-  MISS"; rm -rf $HOME/.cabsnap; mkdir -p $HOME/.ghc $HOME/.cabal/lib $HOME/.cabal/share
-  $HOME/.cabal/bin; cabal install --only-dependencies $CABALCONFOPTS; fi; if [ ! -d
-  $HOME/.cabsnap ]; then echo "snapshotting package-db to build-cache"; mkdir $HOME/.cabsnap;
-  cp -av $HOME/.ghc $HOME/.cabsnap/ghc; cp -av $HOME/.cabal/lib $HOME/.cabal/share
-  $HOME/.cabal/bin installplan.txt $HOME/.cabsnap/; fi;
+- JOB_CURR_TIME=$(date +%s)
+- echo time to run $((JOB_START_TIME + 2400 - JOB_CURR_TIME))
+- timeout $((JOB_START_TIME + 2400 - JOB_CURR_TIME)) stack +RTS -N2 -RTS --no-terminal
+  --system-ghc --skip-ghc-check build --test --only-dependencies -j2 --ghc-options="-j2
+  +RTS -M2G -A128M -n2m -RTS" || true;
 script:
-- if [ -f configure.ac ]; then autoreconf -i; fi
-- cabal configure $CABALCONFOPTS -v2
-- cabal build $CABALBUILDOPTS
-- $CABALTEST
-- if [ "$CABALVER" = "1.22" ]; then cabal check; fi
-- cabal sdist
-- SRC_TGZ=$(cabal info . | awk '{print $2;exit}').tar.gz && (cd dist && cabal install
-  --force-reinstalls $CABALFLAGS "$SRC_TGZ")
+- if [ "$PEDANTIC" = "YES" ]; then export STACKOPTS=--pedantic; fi
+- JOB_CURR_TIME=$(date +%s)
+- echo time to run $((JOB_START_TIME + 2400 - JOB_CURR_TIME))
+- timeout $((JOB_START_TIME + 2400 - JOB_CURR_TIME)) stack +RTS -N2 -RTS --no-terminal
+  --system-ghc --skip-ghc-check build --test $STACKOPTS -j2 --ghc-options="-j2 +RTS
+  -M2G -A128M -n2m -RTS"
+- stack +RTS -N2 -RTS --no-terminal --skip-ghc-check --system-ghc sdist
 matrix:
-  fast_finish: true
   include:
-  - env: GHCVER=7.8.4 CABALVER=1.18
+  - env: GHCVER=7.10.3 STACK_YAML=stack.yaml PEDANTIC=YES
     addons:
       apt:
         sources:
         - hvr-ghc
         packages:
-        - cabal-install-1.18
-        - ghc-7.8.4
-        - libgmp-dev
-    compiler: ! ': # ghc-7.8.4 cabal-1.18'
-  - env: GHCVER=7.10.3 CABALVER=1.22
-    addons:
-      apt:
-        sources:
-        - hvr-ghc
-        packages:
-        - cabal-install-1.22
         - ghc-7.10.3
+        - alex-3.1.7
+        - happy-1.19.5
         - libgmp-dev
-    compiler: ! ': # ghc-7.10.3 cabal-1.22'
-  - env: GHCVER=8.0.1 CABALVER=1.24
-    addons:
-      apt:
-        sources:
-        - hvr-ghc
-        packages:
-        - cabal-install-1.24
-        - ghc-8.0.1
-        - libgmp-dev
-    compiler: ! ': # ghc-8.0.1 cabal-1.24'
-  - env: GHCVER=head CABALVER=1.22
-    addons:
-      apt:
-        sources:
-        - hvr-ghc
-        packages:
-        - cabal-install-1.22
-        - ghc-head
-        - libgmp-dev
-    compiler: ! ': # ghc-head cabal-1.22'
-  allow_failures:
-  - env: GHCVER=8.0.1 CABALVER=1.24
-  - env: GHCVER=head CABALVER=1.22
 branches:
   only:
   - master
-before_cache:
-- rm -fv $HOME/.cabal/packages/hackage.haskell.org/build-reports.log
-- rm -fv $HOME/.cabal/packages/hackage.haskell.org/00-index.tar
 cache:
   directories:
-  - $HOME/.cabsnap
-  - $HOME/.cabal/packages
-git:
-  submodules: false
+  - ~/.stack
+  - ~/.local
+  - .stack-work
+  apt: true
