@@ -1,7 +1,7 @@
 language: haskell-stack
 
 env:
-  - GHCVER=8.0.1 STACK_YAML=stack.yaml PEDANTIC=YES
+  - GHCVER=7.10.3 STACK_YAML=stack.yaml PEDANTIC=YES
 
 branches:
   only:
