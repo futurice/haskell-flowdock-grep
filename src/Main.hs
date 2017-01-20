@@ -9,7 +9,7 @@ import Prelude ()
 import Prelude.Compat as Prelude
 
 import Control.Lens
-import Control.Monad           (when)
+import Control.Monad           (unless, when)
 import Control.Monad.Catch     (Exception, MonadCatch (..), MonadThrow (..))
 import Data.Aeson              (FromJSON, eitherDecode)
 import Data.Bifunctor          (first)
@@ -24,10 +24,7 @@ import Data.Foldable           (toList, traverse_)
 import Data.Function           (on)
 import Data.Hashable           (hash)
 import Data.Maybe              (isJust, isNothing, mapMaybe)
-import Data.Monoid             ((<>))
-import Data.Tagged             (Tagged, untag)
-import Data.Text               (Text)
-import Data.Monoid
+import Data.Semigroup          ((<>))
 import Data.Tagged             (Tagged, untag)
 import Data.Text               (Text)
 import Data.Text.Lens          (packed)
@@ -57,7 +54,6 @@ import qualified Data.Vector          as V
 import qualified System.Console.ANSI  as ANSI
 
 import Chat.Flowdock.REST
-import Chat.Flowdock.REST.Internal (getIdentifier)
 
 stringTrim :: String -> String
 stringTrim = r . ltrim . r . ltrim
@@ -111,10 +107,11 @@ data Opts = Opts
   , optsIgnoreCase   :: Bool
   , optsShowDate     :: Bool
   , optsShowMsgUrl   :: Bool
-  , optsBy           :: Maybe String
+  , optsNoColors     :: Bool
+  , optsBy           :: Maybe Text
   , optsOrganisation :: ParamName Organisation
   , optsFlow         :: Maybe (ParamName Flow)
-  , optsNeedle       :: String
+  , optsNeedle       :: Text
   }
   deriving Show
 
@@ -135,10 +132,11 @@ optsParser maybeToken =
        <*> switch (short 'i' <> long "ignore-case" <> help "Perform case insensitive matching")
        <*> switch (short 'd' <> long "show-date"   <> help "Show date in search results")
        <*> switch (short 'u' <> long "show-url"    <> help "Show message URL in search results")
-       <*> (optional $ strOption (short 'u' <> long "by" <> metavar "user" <> help "Only posts by user"))
+       <*> switch (short 'n' <> long "no-colors"   <> help "No colors")
+       <*> (optional $ T.pack <$> strOption (short 'u' <> long "by" <> metavar "user" <> help "Only posts by user"))
        <*> paramArgument (metavar "org" <> help "Organisation slug, check it from the web url: wwww.flowdock.com/app/ORG/FLOW/")
        <*> flowParser
-       <*> fmap (L.intercalate " ") (many $ strArgument (metavar "needle"))
+       <*> fmap (T.pack . L.intercalate " ") (many $ strArgument (metavar "needle"))
 
 flowParser :: Parser (Maybe (ParamName Flow))
 flowParser = Nothing <$ allParser <|> Just <$> flowNameParser
@@ -203,20 +201,20 @@ readRows filepath  = do
   let g = (,) <$> many get <*>Data.Binary.Get.isEmpty :: Get ([BinaryTagged (SemanticVersion Row) Row], Bool)
   return $ first (fmap binaryUntag') $ runGet g contents
 
-grepRow :: UserMap -> Bool -> Maybe Text -> Text -> Bool -> Maybe (ParamName Flow) -> ParamName Organisation -> Bool -> [Row] -> IO (Maybe Row)
-grepRow users ignoreCase by needle showDate maybeFlow org showMsgUrl rows = go rows
+grepRow :: UserMap -> Opts -> [Row] -> IO (Maybe Row)
+grepRow users opts rows = go rows
   where go []           = return Nothing
         go [row]        = p row >> return (Just row)
         go (row:rows')  = p row >> go rows'
 
         p :: Row -> IO ()
-        p row = when (textMatch && nickMatch) (printRow users row showDate maybeFlow org showMsgUrl)
-          where textMatch = needle `T.isInfixOf` preprocess (rowText' row)
-                nickMatch = maybe True (== findUserNick users (rowUser row)) by
+        p row = when (textMatch && nickMatch) (printRow users row opts)
+          where textMatch = optsNeedle' opts `T.isInfixOf` preprocess (rowText' row)
+                nickMatch = maybe True (== findUserNick users (rowUser row)) (optsBy opts)
 
         preprocess :: Text -> Text
-        preprocess | ignoreCase = T.toLower
-                   | otherwise  = id
+        preprocess | optsIgnoreCase opts = T.toLower
+                   | otherwise           = id
 
 findUserNick :: UserMap -> UserId -> Text
 findUserNick users uid =
@@ -228,36 +226,40 @@ lookupFlows :: FlowMap -> ParamName Organisation -> [ParamName Flow]
 lookupFlows flowsMap org =
   maybe [] NE.toList $ HM.lookup org flowsMap
 
-printRow :: UserMap -> Row -> Bool -> Maybe (ParamName Flow) -> ParamName Organisation -> Bool -> IO ()
-printRow users (Row rowId uid t tags msg) showDate maybeFlow org showMsgUrl = do
+printRow :: UserMap -> Row -> Opts -> IO ()
+printRow users (Row rowId uid t tags msg) opts = do
     tzone <- getTimeZone t
-    let unick = findUserNick users uid
+    let maybeFlow = optsFlow opts
+    let unick     = findUserNick users uid
     let nickColor = nickColors !! (hash unick `mod` length nickColors)
-    let formatStr = if showDate then "%Y-%m-%d %H:%M:%S" else "%H:%M:%S"
-    let stamp = formatTime timeLocale formatStr (utcToLocalTime tzone t)
-    let prefix = if showMsgUrl     then "" else maybe "" ((<> " ") . T.pack . getParamName) maybeFlow
-    let msgUrl = if not showMsgUrl then "" else
-          maybe "" (\flow ->
-                      "https://flowdock.com/app/"
-                      <> T.pack (getParamName org)
-                      <> "/"
-                      <> T.pack (getParamName flow)
-                      <> "/messages/"
-                      <> T.pack (show (getIdentifier rowId))
-                     <> " "
-                   ) maybeFlow
+    let formatStr = if optsShowDate opts then "%Y-%m-%d %H:%M:%S" else "%H:%M:%S"
+    let stamp     = formatTime timeLocale formatStr (utcToLocalTime tzone t)
+    let prefix    = if optsShowMsgUrl opts then "" else maybe "" ((<> " ") . T.pack . getParamName) maybeFlow
+    let msgUrl    = if not (optsShowMsgUrl opts) then "" else maybe "" msgUrl' maybeFlow
     let tags' | null tags = ""
               | otherwise = foldMap ((" #" <>) . getTag) $ toList tags
     T.putStr $ prefix <> T.pack stamp <> " <"
-    ANSI.setSGR [uncurry (ANSI.SetColor ANSI.Foreground) nickColor]
+    withColors $ ANSI.setSGR [uncurry (ANSI.SetColor ANSI.Foreground) nickColor]
     T.putStr unick
-    ANSI.setSGR [ANSI.Reset]
+    withColors $ ANSI.setSGR [ANSI.Reset]
     T.putStr $ "> " <> msg
-    ANSI.setSGR [ANSI.SetColor ANSI.Foreground ANSI.Dull ANSI.White]
+    withColors $ ANSI.setSGR [ANSI.SetColor ANSI.Foreground ANSI.Dull ANSI.White]
     T.putStr tags'
     ANSI.setSGR [ANSI.Reset]
     T.putStrLn msgUrl
+    withColors $ ANSI.setSGR [ANSI.Reset]
+    T.putStrLn ""
   where
+    msgUrl' flow = mconcat
+        [ "https://flowdock.com/app/"
+        , T.pack (getParamName $ optsOrganisation opts)
+        , "/"
+        , T.pack (getParamName flow)
+        , "/messages/"
+        ,  T.pack (show (getIdentifier rowId))
+        ]
+
+    withColors = unless (optsNoColors opts)
     nickColors =
         [ (ANSI.Dull, ANSI.Red)
         , (ANSI.Dull, ANSI.Green)
@@ -331,20 +333,13 @@ readUsers = readCached "user" fetchUsers usersRelPath HM.empty
 optsNeedle' :: Opts -> Text
 optsNeedle' opts =
     if optsIgnoreCase opts
-        then T.toLower needleArg
-        else needleArg
-  where
-    needleArg = T.pack $ optsNeedle opts
+        then T.toLower $ optsNeedle opts
+        else optsNeedle opts
 
 main' :: Path Abs Dir -> Bool -> Opts -> IO ()
 main' settingsDirectory writeToken opts = do
   let token = optsToken opts
   let org = optsOrganisation opts
-  let ignoreCase = optsIgnoreCase opts
-  let by = T.pack <$> optsBy opts
-  let showDate = optsShowDate opts
-  let needle = optsNeedle' opts
-  let showMsgUrl = optsShowMsgUrl opts
 
   -- Save auth token
   when writeToken $ writeAuthToken settingsDirectory token
@@ -356,39 +351,44 @@ main' settingsDirectory writeToken opts = do
   let flows = lookupFlows flowsMap org
 
   case optsFlow opts of
-    Nothing -> traverse_ (doFlow token org ignoreCase by needle users showDate True showMsgUrl) flows
+    Nothing -> traverse_ (doFlow users True) flows
     Just flow
-      | flow `elem` flows -> doFlow token org ignoreCase by needle users showDate False showMsgUrl flow
+      | flow `elem` flows -> doFlow users False flow
       | otherwise
           -> error $ "You are not a member of flow: " <> getParamName flow <> " in organisation: " <> getParamName org
   where
-    doFlow token org ignoreCase by needle users showDate showFlow showMsgUrl aFlow = do
+    doFlow :: UserMap -> Bool -> ParamName Flow -> IO ()
+    doFlow users showFlow aFlow = do
+      -- We pretend that...
       let maybeFlow = if showFlow then Just aFlow else Nothing
+      let opts' = opts { optsFlow = maybeFlow }
 
       -- Cache file
-      cachePath <- parseCachePath settingsDirectory org aFlow
+      cachePath <- parseCachePath settingsDirectory (optsOrganisation opts') aFlow
 
       -- Read from cache
       (rows, allRead) <- readRows cachePath `catch` onIOError ([], True)
-      lastRow <- grepRow users ignoreCase by needle showDate maybeFlow org showMsgUrl rows
+      lastRow <- grepRow users opts' rows
       when (not allRead) $ Prelude.putStrLn "Error: corrupted cache file, removing..." >> removeFile (toFilePath cachePath)
 
       -- Read from API
       when (not $ optsOffline opts) $ do
         mgr <- newManager tlsManagerSettings
-        onlineLoop mgr token org aFlow cachePath users ignoreCase by needle showDate maybeFlow showMsgUrl lastRow
+        onlineLoop mgr cachePath users opts' aFlow lastRow
 
 
-onlineLoop :: Manager -> AuthToken -> ParamName Organisation -> ParamName Flow -> Path Abs File -> UserMap -> Bool -> Maybe Text -> Text -> Bool -> Maybe (ParamName Flow) -> Bool -> Maybe Row -> IO ()
-onlineLoop mgr token org flow cachePath users ignoreCase by needle showDate maybeFlow showMsgUrl = go
-  where go lastRow = do req <- untag <$> messagesRequest org flow (baseMessageOptions $ rowMessageId <$> lastRow)
-                        let req' = authenticateRequest token req
-                        res <- httpLbs req' mgr
-                        rows <- mapMaybe messageToRow <$> throwDecode (responseBody res) :: IO [Row]
-                        saveRows cachePath rows
-                        lastRow' <- grepRow users ignoreCase by needle showDate maybeFlow org showMsgUrl rows
-                        -- Loop only if we got something
-                        when (isJust lastRow') $ go lastRow'
+onlineLoop :: Manager ->  Path Abs File -> UserMap -> Opts -> ParamName Flow -> Maybe Row -> IO ()
+onlineLoop mgr cachePath users opts flow = go
+  where
+    go lastRow = do
+        req <- untag <$> messagesRequest (optsOrganisation opts) flow (baseMessageOptions $ rowMessageId <$> lastRow)
+        let req' = authenticateRequest (optsToken opts) req
+        res <- httpLbs req' mgr
+        rows <- mapMaybe messageToRow <$> throwDecode (responseBody res) :: IO [Row]
+        saveRows cachePath rows
+        lastRow' <- grepRow users opts rows
+        -- Loop only if we got something
+        when (isJust lastRow') $ go lastRow'
 
 main :: IO ()
 main = do

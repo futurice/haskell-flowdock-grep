@@ -47,7 +47,7 @@ executable flowdock-grep
     , http-client-tls
     , lens
     , old-locale
-    , optparse-applicative <0.13
+    , optparse-applicative >= 0.13
     , path
     , semigroups
     , tagged

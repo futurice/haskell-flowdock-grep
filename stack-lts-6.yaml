@@ -7,5 +7,6 @@ packages:
   extra-dep: true
 extra-deps:
 - ansi-pretty-0.1.2.1
+- optparse-applicative-0.13.0.0
 flags: {}
 extra-package-dbs: []
