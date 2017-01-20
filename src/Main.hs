@@ -157,7 +157,7 @@ data Row = Row
   { rowMessageId  :: MessageId
   , rowUser       :: UserId
   , _rowCreatedAt :: UTCTime
-  , _rowTags      :: !(Vector Tag)
+  , rowTags      :: !(Vector Tag)
   , rowText       :: Text
   }
   deriving (Eq, Ord, Show, Generic)
@@ -165,6 +165,10 @@ data Row = Row
 instance Binary Row
 instance HasStructuralInfo Row
 instance HasSemanticVersion Row
+
+-- | Row text with appendet tags
+rowText' :: Row -> Text
+rowText' row = rowText row <> foldMap ((" #" <>) . getTag) (rowTags row)
 
 messageToRow :: Message -> Maybe Row
 messageToRow msg = Row
@@ -180,8 +184,8 @@ messageToRow msg = Row
 
     filterTags = V.filter (not . tagPredicate . getTag)
     tagPredicate t =
-        T.isPrefixOf "influx:" t
-        && T.isInfixOf ":highlight:" t
+        T.isPrefixOf ":" t
+        || T.isPrefixOf "influx:" t
 
 parseCachePath :: Path Abs Dir -> ParamName Organisation -> ParamName Flow -> IO (Path Abs File)
 parseCachePath dir org flow =
@@ -207,7 +211,7 @@ grepRow users ignoreCase by needle showDate maybeFlow org showMsgUrl rows = go r
 
         p :: Row -> IO ()
         p row = when (textMatch && nickMatch) (printRow users row showDate maybeFlow org showMsgUrl)
-          where textMatch = needle `T.isInfixOf` preprocess (rowText row)
+          where textMatch = needle `T.isInfixOf` preprocess (rowText' row)
                 nickMatch = maybe True (== findUserNick users (rowUser row)) by
 
         preprocess :: Text -> Text
