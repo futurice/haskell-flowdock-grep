@@ -22,6 +22,7 @@ import Data.Binary.Tagged
 import Data.Char               (isSpace)
 import Data.Foldable           (toList, traverse_)
 import Data.Function           (on)
+import Data.Hashable           (hash)
 import Data.Maybe              (isJust, isNothing, mapMaybe)
 import Data.Monoid             ((<>))
 import Data.Tagged             (Tagged, untag)
@@ -224,30 +225,43 @@ lookupFlows flowsMap org =
   maybe [] NE.toList $ HM.lookup org flowsMap
 
 printRow :: UserMap -> Row -> Bool -> Maybe (ParamName Flow) -> ParamName Organisation -> Bool -> IO ()
-printRow users (Row id' uid t tags msg) showDate maybeFlow org showMsgUrl = do
-  tzone <- getTimeZone t
-  let unick = findUserNick users uid
-  let formatStr = if showDate then "%Y-%m-%d %H:%M:%S" else "%H:%M:%S"
-  let stamp = formatTime timeLocale formatStr (utcToLocalTime tzone t)
-  let prefix = if showMsgUrl     then "" else maybe "" ((<> " ") . T.pack . getParamName) maybeFlow
-  let msgUrl = if not showMsgUrl then "" else
-        maybe "" (\flow ->
-                    "https://flowdock.com/app/"
-                    <> T.pack (getParamName org)
-                    <> "/"
-                    <> T.pack (getParamName flow)
-                    <> "/messages/"
-                    <> T.pack (show (getIdentifier id'))
-                   <> " "
-                 ) maybeFlow
-  let prefix = maybe "" ((<> " ") . T.pack . getParamName) maybeFlow
-  let tags' | null tags = ""
-            | otherwise = foldMap ((" #" <>) . getTag) $ toList tags
-  T.putStr $ prefix <> T.pack stamp <> " <" <> unick <> "> " <> msg
-  ANSI.setSGR [ANSI.SetColor ANSI.Foreground ANSI.Dull ANSI.White]
-  T.putStr tags'
-  ANSI.setSGR [ANSI.Reset]
-  T.putStrLn msgUrl
+printRow users (Row rowId uid t tags msg) showDate maybeFlow org showMsgUrl = do
+    tzone <- getTimeZone t
+    let unick = findUserNick users uid
+    let nickColor = nickColors !! (hash unick `mod` length nickColors)
+    let formatStr = if showDate then "%Y-%m-%d %H:%M:%S" else "%H:%M:%S"
+    let stamp = formatTime timeLocale formatStr (utcToLocalTime tzone t)
+    let prefix = if showMsgUrl     then "" else maybe "" ((<> " ") . T.pack . getParamName) maybeFlow
+    let msgUrl = if not showMsgUrl then "" else
+          maybe "" (\flow ->
+                      "https://flowdock.com/app/"
+                      <> T.pack (getParamName org)
+                      <> "/"
+                      <> T.pack (getParamName flow)
+                      <> "/messages/"
+                      <> T.pack (show (getIdentifier rowId))
+                     <> " "
+                   ) maybeFlow
+    let tags' | null tags = ""
+              | otherwise = foldMap ((" #" <>) . getTag) $ toList tags
+    T.putStr $ prefix <> T.pack stamp <> " <"
+    ANSI.setSGR [uncurry (ANSI.SetColor ANSI.Foreground) nickColor]
+    T.putStr unick
+    ANSI.setSGR [ANSI.Reset]
+    T.putStr $ "> " <> msg
+    ANSI.setSGR [ANSI.SetColor ANSI.Foreground ANSI.Dull ANSI.White]
+    T.putStr tags'
+    ANSI.setSGR [ANSI.Reset]
+    T.putStrLn msgUrl
+  where
+    nickColors =
+        [ (ANSI.Dull, ANSI.Red)
+        , (ANSI.Dull, ANSI.Green)
+        , (ANSI.Dull, ANSI.Yellow)
+        , (ANSI.Dull, ANSI.Blue)
+        , (ANSI.Dull, ANSI.Cyan)
+        , (ANSI.Dull, ANSI.Magenta)
+        ]
 
 timeLocale :: TimeLocale
 timeLocale = defaultTimeLocale
