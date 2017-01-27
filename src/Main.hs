@@ -7,11 +7,11 @@ module Main (main) where
 
 import Prelude ()
 import Prelude.Compat as Prelude
+import Control.Lens ((^.), (&), (.~))
 
-import Control.Lens
 import Control.Monad           (unless, when)
 import Control.Monad.Catch     (Exception, MonadCatch (..), MonadThrow (..))
-import Data.Aeson              (FromJSON, eitherDecode)
+import Data.Aeson.Compat       (FromJSON, decode)
 import Data.Bifunctor          (first)
 import Data.Binary.Get         (Get, isEmpty, runGet)
 import Data.Binary.Orphans     (Binary (..))
@@ -55,11 +55,6 @@ import qualified System.Console.ANSI  as ANSI
 
 import Chat.Flowdock.REST
 
-stringTrim :: String -> String
-stringTrim = r . ltrim . r . ltrim
-  where ltrim = Prelude.dropWhile isSpace
-        r = Prelude.reverse
-
 data NoUserDirectory = NoUserDirectory
   deriving (Show, Typeable)
 
@@ -82,11 +77,11 @@ flowsListRelPath = $(mkRelFile "flows-list")
 
 lookupSettingsDirectory :: IO (Path Abs Dir)
 lookupSettingsDirectory = do
-  home <- lookupEnv "HOME"
-  user <- lookupEnv "USER"
-  case (home <|> user) of
-    Just dir -> (</> settingsRelPath) <$> parseAbsDir dir
-    Nothing  -> throwM NoUserDirectory
+    home <- lookupEnv "HOME"
+    user <- lookupEnv "USER"
+    case (home <|> user) of
+        Just dir -> (</> settingsRelPath) <$> parseAbsDir dir
+        Nothing  -> throwM NoUserDirectory
 
 readAuthToken :: Path Abs Dir -> IO (Maybe AuthToken)
 readAuthToken dir = readAuthToken' `catch` onIOError Nothing
@@ -95,24 +90,30 @@ readAuthToken dir = readAuthToken' `catch` onIOError Nothing
       contents <- Prelude.readFile (toFilePath (dir </> tokenRelPath))
       return $ Just $ AuthToken $ stringTrim contents
 
+    stringTrim :: String -> String
+    stringTrim = r . ltrim . r . ltrim
+      where
+        ltrim = Prelude.dropWhile isSpace
+        r = Prelude.reverse
+
 writeAuthToken :: Path Abs Dir -> AuthToken -> IO ()
 writeAuthToken dir token = do
-  let filepath = toFilePath (dir </> tokenRelPath)
-  createDirectoryIfMissing True (toFilePath dir)
-  Prelude.writeFile filepath (getAuthToken token)
+    let filepath = toFilePath (dir </> tokenRelPath)
+    createDirectoryIfMissing True (toFilePath dir)
+    Prelude.writeFile filepath (getAuthToken token)
 
 data Opts = Opts
-  { optsToken        :: AuthToken
-  , optsOffline      :: Bool
-  , optsIgnoreCase   :: Bool
-  , optsShowDate     :: Bool
-  , optsShowMsgUrl   :: Bool
-  , optsNoColors     :: Bool
-  , optsBy           :: Maybe Text
-  , optsOrganisation :: ParamName Organisation
-  , optsFlow         :: Maybe (ParamName Flow)
-  , optsNeedle       :: Text
-  }
+    { optsToken        :: !AuthToken
+    , optsOffline      :: !Bool
+    , optsIgnoreCase   :: !Bool
+    , optsShowDate     :: !Bool
+    , optsShowMsgUrl   :: !Bool
+    , optsNoColors     :: !Bool
+    , optsBy           :: !(Maybe Text)
+    , optsOrganisation :: !(ParamName Organisation)
+    , optsFlow         :: !(Maybe (ParamName Flow))
+    , optsNeedle       :: !Text
+    }
   deriving Show
 
 paramArgument :: Mod ArgumentFields String -> Parser (ParamName a)
@@ -126,17 +127,17 @@ authTokenParser maybeToken =
     er = Right . AuthToken
 
 optsParser :: Maybe AuthToken -> Parser Opts
-optsParser maybeToken =
-  Opts <$> authTokenParser maybeToken
-       <*> switch (short 'o' <> long "offline"     <> help "Consider only already downloaded logs")
-       <*> switch (short 'i' <> long "ignore-case" <> help "Perform case insensitive matching")
-       <*> switch (short 'd' <> long "show-date"   <> help "Show date in search results")
-       <*> switch (short 'u' <> long "show-url"    <> help "Show message URL in search results")
-       <*> switch (short 'n' <> long "no-colors"   <> help "No colors")
-       <*> (optional $ T.pack <$> strOption (short 'u' <> long "by" <> metavar "user" <> help "Only posts by user"))
-       <*> paramArgument (metavar "org" <> help "Organisation slug, check it from the web url: wwww.flowdock.com/app/ORG/FLOW/")
-       <*> flowParser
-       <*> fmap (T.pack . L.intercalate " ") (many $ strArgument (metavar "needle"))
+optsParser maybeToken = Opts
+    <$> authTokenParser maybeToken
+    <*> switch (short 'o' <> long "offline"     <> help "Consider only already downloaded logs")
+    <*> switch (short 'i' <> long "ignore-case" <> help "Perform case insensitive matching")
+    <*> switch (short 'd' <> long "show-date"   <> help "Show date in search results")
+    <*> switch (short 'u' <> long "show-url"    <> help "Show message URL in search results")
+    <*> switch (short 'n' <> long "no-colors"   <> help "No colors")
+    <*> (optional $ T.pack <$> strOption (short 'u' <> long "by" <> metavar "user" <> help "Only posts by user"))
+    <*> paramArgument (metavar "org" <> help "Organisation slug, check it from the web url: wwww.flowdock.com/app/ORG/FLOW/")
+    <*> flowParser
+    <*> fmap (T.pack . L.intercalate " ") (many $ strArgument (metavar "needle"))
 
 flowParser :: Parser (Maybe (ParamName Flow))
 flowParser = Nothing <$ allParser <|> Just <$> flowNameParser
@@ -152,12 +153,12 @@ baseMessageOptions sinceId = defaultMessageOptions
     & msgOptSorting  .~ Ascending
 
 data Row = Row
-  { rowMessageId  :: MessageId
-  , rowUser       :: UserId
-  , _rowCreatedAt :: UTCTime
-  , rowTags      :: !(Vector Tag)
-  , rowText       :: Text
-  }
+    { rowMessageId  :: MessageId
+    , rowUser       :: UserId
+    , _rowCreatedAt :: UTCTime
+    , rowTags      :: !(Vector Tag)
+    , rowText       :: Text
+    }
   deriving (Eq, Ord, Show, Generic)
 
 instance Binary Row
@@ -186,35 +187,40 @@ messageToRow msg = Row
         || T.isPrefixOf "influx:" t
 
 parseCachePath :: Path Abs Dir -> ParamName Organisation -> ParamName Flow -> IO (Path Abs File)
-parseCachePath dir org flow =
-  (\o f -> dir </> flowsRelPath </> o </> f) <$> parseRelDir (getParamName org) <*> parseRelFile (getParamName flow)
+parseCachePath dir org flow = mk
+    <$> parseRelDir (getParamName org)
+    <*> parseRelFile (getParamName flow)
+  where
+    mk o f = dir </> flowsRelPath </> o </> f
 
 saveRows :: Path Abs File -> [Row] -> IO ()
 saveRows filepath rows = do
-  let bytes = runPut (mapM_ (put . binaryTag') rows)
-  createDirectoryIfMissing True (toFilePath (parent filepath))
-  LBS.appendFile (toFilePath filepath) bytes
+    let bytes = runPut $ traverse_ (put . binaryTag') rows
+    createDirectoryIfMissing True $ toFilePath (parent filepath)
+    LBS.appendFile (toFilePath filepath) bytes
 
 readRows :: Path Abs File -> IO ([Row], Bool)
 readRows filepath  = do
-  contents <- LBS.readFile (toFilePath filepath)
-  let g = (,) <$> many get <*>Data.Binary.Get.isEmpty :: Get ([BinaryTagged (SemanticVersion Row) Row], Bool)
-  return $ first (fmap binaryUntag') $ runGet g contents
+    contents <- LBS.readFile (toFilePath filepath)
+    let g = (,) <$> many get <*> Data.Binary.Get.isEmpty :: Get ([BinaryTagged (SemanticVersion Row) Row], Bool)
+    return $ first (fmap binaryUntag') $ runGet g contents
 
 grepRow :: UserMap -> Opts -> [Row] -> IO (Maybe Row)
 grepRow users opts rows = go rows
-  where go []           = return Nothing
-        go [row]        = p row >> return (Just row)
-        go (row:rows')  = p row >> go rows'
+  where
+    go []           = return Nothing
+    go [row]        = p row >> return (Just row)
+    go (row:rows')  = p row >> go rows'
 
-        p :: Row -> IO ()
-        p row = when (textMatch && nickMatch) (printRow users row opts)
-          where textMatch = optsNeedle' opts `T.isInfixOf` preprocess (rowText' row)
-                nickMatch = maybe True (== findUserNick users (rowUser row)) (optsBy opts)
+    p :: Row -> IO ()
+    p row = when (textMatch && nickMatch) (printRow users row opts)
+      where
+        textMatch = optsNeedle' opts `T.isInfixOf` preprocess (rowText' row)
+        nickMatch = maybe True (== findUserNick users (rowUser row)) (optsBy opts)
 
-        preprocess :: Text -> Text
-        preprocess | optsIgnoreCase opts = T.toLower
-                   | otherwise           = id
+    preprocess :: Text -> Text
+    preprocess | optsIgnoreCase opts = T.toLower
+               | otherwise           = id
 
 findUserNick :: UserMap -> UserId -> Text
 findUserNick users uid =
@@ -224,7 +230,7 @@ findUserNick users uid =
 
 lookupFlows :: FlowMap -> ParamName Organisation -> [ParamName Flow]
 lookupFlows flowsMap org =
-  maybe [] NE.toList $ HM.lookup org flowsMap
+    maybe [] toList $ HM.lookup org flowsMap
 
 printRow :: UserMap -> Row -> Opts -> IO ()
 printRow users (Row rowId uid t tags msg) opts = do
@@ -278,12 +284,12 @@ mkUserMap = HM.fromList . fmap f
 
 fetch :: FromJSON t => AuthToken -> IO (Tagged s Request) -> (t -> b) -> IO b
 fetch token request parse = do
-  mgr <- newManager tlsManagerSettings
-  req <- untag <$> request
-  let req' = authenticateRequest token req
-  res <- httpLbs req' mgr
-  results <- throwDecode (responseBody res)
-  return $ parse results
+    mgr <- newManager tlsManagerSettings
+    req <- untag <$> request
+    let req' = authenticateRequest token req
+    res <- httpLbs req' mgr
+    results <- decode (responseBody res)
+    return $ parse results
 
 -- | Fetch users from API
 fetchUsers :: AuthToken -> IO UserMap
@@ -301,26 +307,33 @@ mkFlowMap flows = HM.fromList (L.map makePair grouped)
     grouped = NE.groupBy ((==) `on` _flowOrganisation) flows
     makePair group' =
         ( _foParamName . _flowOrganisation . NE.head $ group'
-        , NE.map _flowParamName group'
+        , _flowParamName <$> group'
         )
 
 readCached
     :: (Binary a, HasSemanticVersion a, HasStructuralInfo a)
     => String -> (AuthToken -> IO a) -> Path Rel File -> a -> Path Abs Dir -> AuthToken -> Bool -> IO a
-readCached msg fetcher filePath empty' settingsDirectory token offline = do
-  let filepath = settingsDirectory </> filePath
-  let readCached' = do fromFile <- taggedDecodeFileOrFail (toFilePath filepath)
-                       case fromFile of
-                         Left (_, err) -> do Prelude.putStrLn $ "Error: corrupted " <> msg <> " file: " <> err <> "; removing..."
-                                             removeFile (toFilePath filepath)
-                                             return empty'
-                         Right x  -> return x
-  let fetchOnline' = do values <- fetcher token
-                        taggedEncodeFile (toFilePath filepath) values
-                        return values
-  if offline
-     then readCached' `catch` onIOError empty'
-     else readCached' `catch` withIOError (const fetchOnline')
+readCached msg fetcher filePath empty' settingsDirectory token offline
+    | offline   = readCached' `catch` onIOError empty'
+    | otherwise = readCached' `catch` withIOError (const fetchOnline')
+  where
+    filePath' = settingsDirectory </> filePath
+    filePath'' = toFilePath filePath'
+
+    readCached' = do
+        fromFile <- taggedDecodeFileOrFail filePath''
+        case fromFile of
+            Left (_, err) -> do
+                Prelude.putStrLn $ "Error: corrupted " <> msg <> " file: " <> err <> "; removing..."
+                removeFile filePath''
+                return empty'
+            Right x  -> return x
+
+    fetchOnline' = do
+        values <- fetcher token
+        taggedEncodeFile filePath'' values
+        return values
+    
 
 readFlows :: Path Abs Dir -> AuthToken -> Bool -> IO FlowMap
 readFlows = readCached "flow list" fetchFlowMap flowsListRelPath HM.empty
@@ -329,31 +342,30 @@ readUsers :: Path Abs Dir -> AuthToken -> Bool -> IO UserMap
 readUsers = readCached "user" fetchUsers usersRelPath HM.empty
 
 optsNeedle' :: Opts -> Text
-optsNeedle' opts =
-    if optsIgnoreCase opts
-        then T.toLower $ optsNeedle opts
-        else optsNeedle opts
+optsNeedle' opts
+    | optsIgnoreCase opts = T.toLower $ optsNeedle opts
+    | otherwise           = optsNeedle opts
 
 main' :: Path Abs Dir -> Bool -> Opts -> IO ()
 main' settingsDirectory writeToken opts = do
-  let token = optsToken opts
-  let org = optsOrganisation opts
+    let token = optsToken opts
+    let org = optsOrganisation opts
 
-  -- Save auth token
-  when writeToken $ writeAuthToken settingsDirectory token
+    -- Save auth token
+    when writeToken $ writeAuthToken settingsDirectory token
 
-  -- Users
-  users <- readUsers settingsDirectory token (optsOffline opts)
+    -- Users
+    users <- readUsers settingsDirectory token (optsOffline opts)
 
-  flowsMap <- readFlows settingsDirectory token (optsOffline opts)
-  let flows = lookupFlows flowsMap org
+    flowsMap <- readFlows settingsDirectory token (optsOffline opts)
+    let flows = lookupFlows flowsMap org
 
-  case optsFlow opts of
-    Nothing -> traverse_ (doFlow users True) flows
-    Just flow
-      | flow `elem` flows -> doFlow users False flow
-      | otherwise
-          -> error $ "You are not a member of flow: " <> getParamName flow <> " in organisation: " <> getParamName org
+    case optsFlow opts of
+        Nothing -> traverse_ (doFlow users True) flows
+        Just flow
+            | flow `elem` flows -> doFlow users False flow
+            | otherwise
+                -> error $ "You are not a member of flow: " <> getParamName flow <> " in organisation: " <> getParamName org
   where
     doFlow :: UserMap -> Bool -> ParamName Flow -> IO ()
     doFlow users showFlow aFlow = do
@@ -369,8 +381,8 @@ main' settingsDirectory writeToken opts = do
 
       -- Read from API
       when (not $ optsOffline opts) $ do
-        mgr <- newManager tlsManagerSettings
-        onlineLoop mgr cachePath users opts' aFlow lastRow
+          mgr <- newManager tlsManagerSettings
+          onlineLoop mgr cachePath users opts' aFlow lastRow
 
 
 onlineLoop :: Manager ->  Path Abs File -> UserMap -> Opts -> ParamName Flow -> Maybe Row -> IO ()
@@ -380,7 +392,7 @@ onlineLoop mgr cachePath users opts flow = go
         req <- untag <$> messagesRequest (optsOrganisation opts) flow (baseMessageOptions $ rowMessageId <$> lastRow)
         let req' = authenticateRequest (optsToken opts) req
         res <- httpLbs req' mgr
-        rows <- mapMaybe messageToRow <$> throwDecode (responseBody res) :: IO [Row]
+        rows <- mapMaybe messageToRow <$> decode (responseBody res) :: IO [Row]
         saveRows cachePath rows
         lastRow' <- grepRow users opts rows
         -- Loop only if we got something
@@ -388,17 +400,11 @@ onlineLoop mgr cachePath users opts flow = go
 
 main :: IO ()
 main = do
-  settingsDirectory <- lookupSettingsDirectory
-  token <- readAuthToken settingsDirectory
-  let opts = info (helper <*> optsParser token) (fullDesc <> progDesc "Try --help if unsure" <> header "flowdock-grep - grep flowdock logs")
-  parsedOpts <- execParser opts
-  main' settingsDirectory (isNothing token) parsedOpts
-
--- Helpers
-throwDecode :: (MonadThrow m, FromJSON a) => LBS.ByteString -> m a
-throwDecode bs = case eitherDecode bs of
-  Right x   -> return x
-  Left err  -> error $ "throwDecode: " <> err
+    settingsDirectory <- lookupSettingsDirectory
+    token <- readAuthToken settingsDirectory
+    let opts = info (helper <*> optsParser token) (fullDesc <> progDesc "Try --help if unsure" <> header "flowdock-grep - grep flowdock logs")
+    parsedOpts <- execParser opts
+    main' settingsDirectory (isNothing token) parsedOpts
 
 onIOError :: a -> IOError -> IO a
 onIOError x _ = return x
