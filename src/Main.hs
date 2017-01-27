@@ -145,11 +145,11 @@ flowParser = Nothing <$ allParser <|> Just <$> flowNameParser
     flowNameParser = paramArgument (metavar "flow" <> help "Flow slug (mandatory if --all not specified)")
 
 baseMessageOptions :: Maybe MessageId -> MessageOptions
-baseMessageOptions sinceId =
-  defMessageOptions & msgOptEvents   .~ [EventMessage, EventComment]
-                    & msgOptLimit    .~ Just 100
-                    & msgOptSinceId  .~ sinceId
-                    & msgOptSorting  .~ Ascending
+baseMessageOptions sinceId = defaultMessageOptions
+    & msgOptEvents   .~ [EventMessage, EventComment]
+    & msgOptLimit    .~ Just 100
+    & msgOptSinceId  .~ sinceId
+    & msgOptSorting  .~ Ascending
 
 data Row = Row
   { rowMessageId  :: MessageId
