@@ -32,7 +32,7 @@ executable flowdock-grep
       base >= 4.7 && <4.10
     , base-compat
     , flowdock-rest >=0.1.0.0
-    , aeson
+    , aeson-compat
     , ansi-terminal
     , bifunctors
     , binary
