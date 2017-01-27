@@ -1,9 +1,9 @@
-resolver: lts-6.27
+resolver: lts-6.28
 packages:
 - '.'
 - location:
     git: https://github.com/futurice/haskell-flowdock-rest.git
-    commit: 09f1de5b68c312503fe13bf9752e7456f8ede1e4
+    commit: 8988777c6d3e416d589a7665c38840276579809d
   extra-dep: true
 extra-deps:
 - ansi-pretty-0.1.2.1
