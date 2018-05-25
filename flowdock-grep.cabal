@@ -1,9 +1,5 @@
--- This file has been generated from package.yaml by hpack version 0.15.0.
---
--- see: https://github.com/sol/hpack
-
 name:           flowdock-grep
-version:        0.0.0.0
+version:        0
 synopsis:       Grep Flowdock logs
 description:    Check the readme below
 category:       Web, Productivity
@@ -29,7 +25,7 @@ executable flowdock-grep
       src
   ghc-options: -Wall -threaded
   build-depends:
-      base >= 4.7 && <4.11
+      base >= 4.7 && <4.12
     , base-compat
     , flowdock-rest >=0.1.0.0
     , aeson-compat
