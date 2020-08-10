@@ -33,7 +33,7 @@ executable flowdock-grep
     , bifunctors
     , binary
     , binary-orphans >=0.1.3.0
-    , binary-tagged >=0.1.4.0 && <0.3
+    , binary-tagged >=0.1.4.0 && <0.4
     , bytestring
     , deepseq
     , directory
