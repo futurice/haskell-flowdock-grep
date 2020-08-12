@@ -5,16 +5,16 @@
 {-# LANGUAGE TemplateHaskell    #-}
 module Main (main) where
 
+import Control.Lens   ((&), (.~), (^.))
 import Prelude ()
 import Prelude.Compat as Prelude
-import Control.Lens ((^.), (&), (.~))
 
 import Control.Monad           (unless, when)
 import Control.Monad.Catch     (Exception, MonadCatch (..), MonadThrow (..))
 import Data.Aeson.Compat       (FromJSON, decode)
 import Data.Bifunctor          (first)
+import Data.Binary             (Binary (..))
 import Data.Binary.Get         (Get, isEmpty, runGet)
-import Data.Binary.Orphans     (Binary (..))
 import Data.Binary.Put         (runPut)
 import Data.Binary.Tagged
        (BinaryTagged, HasSemanticVersion, HasStructuralInfo, SemanticVersion,
@@ -333,7 +333,7 @@ readCached msg fetcher filePath empty' settingsDirectory token offline
         values <- fetcher token
         taggedEncodeFile filePath'' values
         return values
-    
+
 
 readFlows :: Path Abs Dir -> AuthToken -> Bool -> IO FlowMap
 readFlows = readCached "flow list" fetchFlowMap flowsListRelPath HM.empty
